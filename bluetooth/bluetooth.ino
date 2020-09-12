@@ -111,7 +111,7 @@ void loop()
     }
 
     if (parser.valid) {
-     // Serial.print("VALID: "); Serial.println(parser.cmd);
+      // Serial.print("VALID: "); Serial.println(parser.cmd);
       if (parser.cmd.equalsIgnoreCase(String("on"))) {        
         eeprom.led = 1;
         digitalWrite(LED_BUILTIN, HIGH);
@@ -122,7 +122,7 @@ void loop()
       }
       else if (parser.cmd.startsWith("pwm ")) {
           byte v = atoi(parser.cmd.substring(parser.cmd.indexOf(' ')).c_str());
-          Serial.print("pwm:"); Serial.println(v);
+          //Serial.print("pwm:"); Serial.println(v);
           eeprom.pwm = pgm_read_byte(&gamma8[v]);
           analogWrite(3, eeprom.pwm);
       }
