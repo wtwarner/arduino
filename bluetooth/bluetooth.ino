@@ -9,12 +9,23 @@
 //  Pins
 //  BT VCC to Arduino 5V out. 
 //  BT GND to GND
+
+// Arduino Duo:  AltSoftSerial
 //  Arduino D8 (SS RX) - BT TX no need voltage divider 
 //  Arduino D9 (SS TX) - BT RX through a voltage divider (5v to 3.3v)
 //
- 
-// https://www.pjrc.com/teensy/td_libs_AltSoftSerial.html
-#include <AltSoftSerial.h>
+// Teensy 2.0: (HardwareSerial: Serial1)
+//   D7  (RX) - from BT TX  (3.3v)
+//   D8  (TX) - to BT RX through voltage divider (5v to 3.3v)
+
+#ifdef TEENSYDUINO
+#    define BTserial Serial1
+#else
+    // https://www.pjrc.com/teensy/td_libs_AltSoftSerial.html
+#   include <AltSoftSerial.h>
+    AltSoftSerial BTserial; 
+#endif
+
 #include <EEPROM.h>
 
 struct myEEPROM_t {
@@ -60,7 +71,6 @@ struct btCmdParser {
 
 btCmdParser parser;
 myEEPROM_t eeprom;
-AltSoftSerial BTserial; 
  
 const uint8_t PROGMEM gamma8[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -106,12 +116,12 @@ void loop()
     if (BTserial.available())
     {
         char c = BTserial.read();
-        //Serial.write(c);
+        Serial.write(c);
         parser.addChar(c);
     }
 
     if (parser.valid) {
-      // Serial.print("VALID: "); Serial.println(parser.cmd);
+      Serial.print("VALID: "); Serial.println(parser.cmd);
       if (parser.cmd.equalsIgnoreCase(String("on"))) {        
         eeprom.led = 1;
         digitalWrite(LED_BUILTIN, HIGH);

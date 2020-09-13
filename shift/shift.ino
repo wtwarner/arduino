@@ -2,7 +2,7 @@
   control 2 shift registers
   */
   
-const int latchPin = 8;
+const int latchPin = 6;
 const int clockPin = 12;
 const int dataPin = 9; // LED is 11
 const int dimPin = 10;
