@@ -23,7 +23,7 @@
 #define LED_PIN    13
 
 // How many NeoPixels are attached to the Arduino?
-#define LED_COUNT 11
+#define LED_COUNT 6
 #define N_PHASE 150
 
 

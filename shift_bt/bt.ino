@@ -74,6 +74,10 @@ void bt_setup()
     pinMode(3, OUTPUT);
 }
 
+void bt_send(const String &cmd)
+{
+    BTserial.print(cmd);
+}
 
 bool bt_loop(String &cmd)
 {
