@@ -23,8 +23,9 @@
 #define LED_PIN    13
 
 // How many NeoPixels are attached to the Arduino?
-#define LED_COUNT 6
-#define N_PHASE 150
+#define LED_COUNT 11
+#define N_PHASE 360
+#define PHASE_STEP 40
 
 
 
@@ -60,24 +61,25 @@ void neo_setup(neo_state_t &state) {
 
 int phase = 0;
 
-// loop() function -- runs repeatedly as long as board is on ---------------
+const byte neo_pos_map[LED_COUNT] = {3, 2, 4, 1, 5, 0, 6, 10, 7, 9, 8};
 
 void neo_loop(neo_state_t &state) {
-  if (timer < 2)
+  if (timer < 4)
     return;
   timer = 0;
   
   strip.setBrightness(gamma8(state.brightness)); 
-    
-  byte red = gamma8(127);
+ 
   for (int i=0; i < LED_COUNT; i++) {
-    float a = (i+phase) * 2*M_PI / N_PHASE;
-    float cf= cos(a);
-    int c = int(cf * 127.0) + 127;
+
+    byte s_blue = sin8((i*PHASE_STEP + phase) % N_PHASE);
+    byte s_red = sin8((i*PHASE_STEP + phase + 90) % N_PHASE);
+
     //Serial.print(phase); Serial.print(", ");
     //Serial.print(c); Serial.print("  ");
-    c = gamma8(c);
-    strip.setPixelColor(i, strip.Color(red, 0, c));
+    byte red = gamma8(s_red);
+    byte blue = gamma8(s_blue);
+    strip.setPixelColor(neo_pos_map[i], strip.Color(red, 0, blue));
 
     // This sends the updated pixel color to the hardware.
     strip.show();

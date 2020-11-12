@@ -2,11 +2,10 @@
 const int latchPin = 6;
 const int clockPin = 12;
 const int dataPin = 9; // LED is 11
-const int dimPin = 10;
-const int dimPin2 = 14;
-const int dimPin3 = 15;
+const int numPwm = 5;
+const int pwmPin[numPwm] = {10, 14, 15, 5, 4};
 
-const int NUM_LEDS = 8*5;
+const int NUM_LEDS = 8*7;
 
 struct led_state_t {
   led_state_t(): 
@@ -22,15 +21,21 @@ struct led_state_t {
 
 led_state_t leds[NUM_LEDS];
 elapsedMillis shift_timer;
-byte shift_phase;
+int shift_phase;
 
 void update_pwm(byte v)
 {
    byte g = 255-gamma8(v);
-   analogWrite(dimPin, g);
-   analogWrite(dimPin2, g);
-   analogWrite(dimPin3, g);
+   for (int i = 0; i < numPwm; i ++)
+     analogWrite(pwmPin[i], g);
+}
 
+void update_pwms(byte pwms[])
+{
+   for (int i = 0; i < numPwm; i ++) {
+      byte g = 255-gamma8(pwms[i]);
+      analogWrite(pwmPin[i], g);
+   }
 }
 
 void shift_setup(shift_state_t &state)
@@ -40,9 +45,8 @@ void shift_setup(shift_state_t &state)
   pinMode(latchPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
   pinMode(dataPin, OUTPUT);
-  pinMode(dimPin, OUTPUT);
-  pinMode(dimPin2, OUTPUT);
-  pinMode(dimPin3, OUTPUT);
+  for (int i = 0; i < numPwm; i ++)
+     pinMode(pwmPin[i], OUTPUT);
 
   for (unsigned int i = 0; i < NUM_LEDS; i ++) {
     leds[i].state = 1;
@@ -72,22 +76,28 @@ byte cycle = 0;
 byte shift_mode = 1;
 void shift_loop(shift_state_t &state)
 {
-
+  
   if (state.mode == 0 && shift_timer > 5) {
-      int pwm = (int)sin8(shift_phase) * state.pwm;
-      update_pwm(pwm >> 8);
+      static byte pwms[numPwm] = {255};
+      for (int i = 0; i < numPwm; i++) {
+          
+         int a = (shift_phase + 45*i) % 360;
+         int pwm16 = (int)sin8(a) * state.pwm;
+         pwms[i] = pwm16 >> 8;
+      }
+      update_pwms(pwms);
       for (unsigned int i = 0; i < NUM_LEDS; i ++) {  
         //leds[i].state = shift_phase > i*360/(NUM_LEDS-1);
-        leds[i].state = i <= cycle;
+        //leds[i].state = i <= cycle;
+        leds[i].state = 1;
       }
       shift_phase = (shift_phase + 1) % 360;
       shift_timer = 0;
       if (shift_phase == 0)
         cycle = (cycle + 1) % NUM_LEDS;
       
-   
   }
-  else if (state.mode == 1 && shift_timer > 5) {
+  else if (state.mode == 1 && shift_timer > 10) {
     long time_now = millis();
     for (unsigned int i = 0; i < NUM_LEDS; i ++) {  
         if (leds[i].deadline < time_now) {

@@ -1,16 +1,26 @@
 /*
-  control 2 shift registers
+  Nixie:
+  
+  3 shift registers
+     0..3:
+     4:     LED
+     8..11
+     12..15
+     16..19
+     20..23
   */
+  
+const int latchPin = 4;
+const int clockPin = 3;
+const int dataPin = 2;
+const int dimPin = 9; // pwm
 
+const int NUM_LEDS = 24;
+int builtin_led_timer = 0;
+int led_timer = 0;
 
-#include "common.h"
-
-#include <EEPROM.h>
-
-
-   
-elapsedMillis builtin_led_timer;
 byte builtin_led_state = 0;
+byte led_state = 0;
 
 
 const uint8_t PROGMEM gamma8_table[] = {
@@ -80,7 +90,6 @@ const uint8_t PROGMEM sin8_table[360] =
 110,112,114,116,119,121,123,125,
 };
 
-myEEPROM_t eeprom;
 
 byte gamma8(byte v) {
   return pgm_read_byte(&gamma8_table[v]);
@@ -88,72 +97,64 @@ byte gamma8(byte v) {
 byte sin8(int deg) {
   return pgm_read_byte(&sin8_table[deg]);
 }
-
 // the setup function runs once when you press reset or power the board
 void setup() {
   // initialize digital pin LED_BUILTIN as an output.
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(latchPin, OUTPUT);
+  pinMode(clockPin, OUTPUT);
+  pinMode(dataPin, OUTPUT);
+  pinMode(dimPin, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(10, OUTPUT);
 
   Serial.begin(9600);
-
-  EEPROM.get(0, eeprom);
- 
-  bt_setup();
-  shift_setup(eeprom.shift_state);
-  neo_setup(eeprom.neo_state);
-}
+ }
 
 void loop() {
+  analogWrite(dimPin, 0);
+  
+  byte shiftData [NUM_LEDS/8] = {0};
+  
+  for (unsigned int i = 0; i < NUM_LEDS; i ++) {
+    byte v = 0;
+    switch (i) {
+        case 4: v = led_state; break;
+        
+        case 12: v = 1; break;
+        case 13: v = 1; break;
+        case 14: v = 1; break;
+        case 15: v = led_state; break;
 
+        default: v = 0; break;
+    }
+    shiftData[i/8] |= v << (i%8);
+  }
+  digitalWrite(latchPin, LOW);
+  for (unsigned int i = 0; i < NUM_LEDS/8; i ++) {
+    shiftOut(dataPin, clockPin, MSBFIRST, shiftData[i]);
+  }
+  digitalWrite(latchPin, HIGH);
+  // Serial.println(leds[0].value);
+  //digitalWrite(7, led_state);
+  static byte x = 1;
+  analogWrite(11,max(20,gamma8(255-x)));
+  analogWrite(10,max(20,gamma8(x)));
+  if (++x == 255) x = 1;
+
+  //delay(1);
   if (builtin_led_timer > 250) {
       digitalWrite(LED_BUILTIN, builtin_led_state);
       builtin_led_state = 1 - builtin_led_state;
       builtin_led_timer = 0;
-      String s = "led:" + String(builtin_led_state) + ";";
-      bt_send(s); 
-      s = "ledpwm:" + String(eeprom.shift_state.pwm) + ";";
-      bt_send(s);
-      s = "neopwm:" + String(eeprom.neo_state.brightness) + ";";
-      bt_send(s);
-      s = "stest:" + String(eeprom.shift_state.test_value) + ";";
-      bt_send(s);
-      s = "modeled0:" + String(eeprom.shift_state.mode == 0) + ";";
-      bt_send(s);
-      s = "modeled1:" + String(eeprom.shift_state.mode == 1) + ";";
-      bt_send(s);
-      s = "modeled2:" + String(eeprom.shift_state.mode == 2) + ";";
-      bt_send(s);     
- 
   }
 
-  String bt_cmd;
-  if (bt_loop(bt_cmd)) {
-    if (bt_cmd.startsWith("ledbright ")) {
-          eeprom.shift_state.pwm = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
-          //Serial.print("pwm:"); Serial.println(v);
-    }
-    else if (bt_cmd.startsWith("ledmode ")) {
-          eeprom.shift_state.mode = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
-          //Serial.print("pwm:"); Serial.println(v);
-    }
-    else if (bt_cmd.startsWith("stest ")) {
-      int pad_direction = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str()); 
-      switch (pad_direction) {
-          case 1: eeprom.shift_state.test_value = max(eeprom.shift_state.test_value - 1, 0); break;
-          case 2: eeprom.shift_state.test_value ++; break;
-          case 3: eeprom.shift_state.test_value = max(eeprom.shift_state.test_value - 10, 0); break;
-          case 4: eeprom.shift_state.test_value += 10; break;
-      }
-      Serial.print("stest "); Serial.println(eeprom.shift_state.test_value);
-    }
-    if (bt_cmd.startsWith("neobright ")) {
-          eeprom.neo_state.brightness = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
-          //Serial.print("pwm:"); Serial.println(v);
-    }
-
-    EEPROM.put(0, eeprom);
+  if (led_timer > 2000) {
+    led_state = 1 - led_state;
+    led_timer = 0;
   }
 
-  shift_loop(eeprom.shift_state);
-  neo_loop(eeprom.neo_state);
+  delay(10);
+  led_timer += 10;
+  builtin_led_timer += 10;
 }
