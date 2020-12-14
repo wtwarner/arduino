@@ -9,12 +9,11 @@
 #include <RTClib.h>
 // #include <Wire.h>
 
-RTC_DS3231 rtc;
+static RTC_DS3231 rtc;
 
 void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
-  pinMode(clockSqwPin, INPUT_PULLUP);  
-  attachInterrupt(digitalPinToInterrupt(clockSqwPin), isr, RISING);
-
+    //pinMode(clockSqwPin, INPUT_PULLUP);  
+ 
     // initializing the rtc
     if(!rtc.begin()) {
         Serial.println("Couldn't find RTC!");
@@ -38,9 +37,9 @@ void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
     // again, this isn't done at reboot, so a previously set alarm could easily go overlooked
     rtc.disableAlarm(1);
     rtc.disableAlarm(2);   
-
-    rtc.writeSqwPinMode(DS3231_SquareWave1Hz);
     
+    //attachInterrupt(digitalPinToInterrupt(clockSqwPin), isr, RISING);
+    //rtc.writeSqwPinMode(DS3231_SquareWave1Hz);
 }
 
 time_t ds3231_get_unixtime(void) {

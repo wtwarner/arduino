@@ -1,3 +1,6 @@
 [submodule "libraries/FlashStorage_SAMD"]
 	path = libraries/FlashStorage_SAMD
 	url = https://github.com/khoih-prog/FlashStorage_SAMD.git
+[submodule "libraries/Time"]
+	path = libraries/Time
+	url = https://github.com/PaulStoffregen/Time.git
