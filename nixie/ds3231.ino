@@ -12,7 +12,6 @@
 static RTC_DS3231 rtc;
 
 void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
-  // pinMode(clockSqwPin, INPUT_PULLUP);
 
   // initializing the rtc
   if (!rtc.begin()) {
@@ -45,3 +44,8 @@ void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
 }
 
 time_t ds3231_get_unixtime(void) { return rtc.now().unixtime(); }
+
+void ds3231_set(time_t unix_time_utc) {
+  DateTime td(unix_time_utc);
+  rtc.adjust(td);
+}
