@@ -19,7 +19,8 @@
 #include <ArduinoBLE.h>
 
 BLEService nixieService("ffe0"); // create service
-BLEStringCharacteristic sCharacteristic("FFE1", BLERead | BLEWriteWithoutResponse, 16);
+BLEStringCharacteristic sCharacteristic("FFE1",
+                                        BLERead | BLEWriteWithoutResponse, 16);
 BLEDescriptor sDescriptor("2901", "Nixie command");
 
 void ble_setup() {
@@ -35,7 +36,7 @@ void ble_setup() {
   BLE.setDeviceName("Nixie");
   BLE.setLocalName("Nixie");
   // set the UUID for the service this peripheral advertises
-  BLE.setAdvertisedService( nixieService);
+  BLE.setAdvertisedService(nixieService);
 
   // add the characteristic to the service
   nixieService.addCharacteristic(sCharacteristic);
@@ -54,12 +55,13 @@ void ble_setup() {
 bool ble_loop(String &cmd) {
   // poll for BLE events
 
-    BLEDevice central = BLE.central();
-    if (central && sCharacteristic.written()) {
-        cmd = sCharacteristic.value();
+  BLEDevice central = BLE.central();
+  if (central && sCharacteristic.written()) {
+    cmd = sCharacteristic.value();
 
-        Serial.println("BT cmd: "); Serial.println(cmd);
-        return true;
-    }
+    Serial.println("BT cmd: ");
+    Serial.println(cmd);
+    return true;
+  }
   return false;
 }
