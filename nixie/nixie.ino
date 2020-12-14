@@ -246,7 +246,7 @@ void cmd_parse(String &bt_cmd) {
   int v = 0;
   int i;
   if ((i = bt_cmd.indexOf(':')) >= 0) {
-    String value_s(bt_cmd.substring(i));
+    String value_s(bt_cmd.substring(i+1));
     v = atoi(value_s.c_str());
   }
 
@@ -256,6 +256,9 @@ void cmd_parse(String &bt_cmd) {
     set_nixie_brightness();
   } else if (bt_cmd.startsWith("24:")) {
     options.twentyfour_hour = v;
+  } else if (bt_cmd.startsWith("SS:")) {
+    options.show_seconds = v;
+    Serial.print("show seconds: "); Serial.println(v);
   } else if (bt_cmd.startsWith("H:") && (v != 0)) {
     new_utc = utc + v * 3600;
   } else if (bt_cmd.startsWith("M:") && (v != 0)) {
