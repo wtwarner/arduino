@@ -76,6 +76,11 @@ struct neon_state_t {
 };
 neon_state_t neon_state = {254, 200};
 
+enum { DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_ANTIPOISON };
+static int display_state = DISP_STATE_TIME;
+static int antipoison_cnt = 0;
+static unsigned long start_millis = 0;
+
 void setup() {
 
   Serial.begin(9600);
@@ -106,9 +111,7 @@ void setup() {
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
   timer.every(2000, toggle_led);
-  // timer.every(1000, shift_out_nixie);
   timer.every(10, toggle_neon);
-  // timer.every(500, update_nixie);
 
   // wifi_setup();
   ble_setup();
@@ -154,7 +157,7 @@ bool check_time(void *) {
   return true;
 }
 
-bool update_nixie(void *) {
+void update_nixie_time() {
   time_t local = myTZ.toLocal(utc, &tcr);
   printDateTime(local, tcr->abbrev);
   const byte hour24 = hour(local);
@@ -171,8 +174,34 @@ bool update_nixie(void *) {
     nixie_digits[1] = minute(local) / 10;
     nixie_digits[0] = minute(local) % 10;
   }
+}
 
-  return true;
+void update_nixie_date() {
+  time_t local = myTZ.toLocal(utc, &tcr);
+  const byte m = month(local);
+  const byte m10 = m / 10;
+  const byte m1 = m % 10;
+  const byte d = day(local);
+  nixie_digits[3] = (m10 > 0) ? m10 : 0xf; // blank leading 0
+  nixie_digits[2] = m1;
+  nixie_digits[1] = d / 10;
+  nixie_digits[0] = d % 10;
+}
+
+static byte disused3[] = {0, 2, 3, 4, 5, 6, 7, 8, 9};
+static byte disused2[] = {0, 15};
+static byte disused1[] = {6, 7, 8, 9};
+static byte disused0[] = {15};
+void update_nixie_antipoison() {
+  nixie_digits[3] =
+      disused3[antipoison_cnt % (sizeof(disused3) / sizeof(byte))];
+  nixie_digits[2] =
+      disused2[antipoison_cnt % (sizeof(disused2) / sizeof(byte))];
+  nixie_digits[1] =
+      disused1[antipoison_cnt % (sizeof(disused1) / sizeof(byte))];
+  nixie_digits[0] =
+      disused0[antipoison_cnt % (sizeof(disused0) / sizeof(byte))];
+  antipoison_cnt++;
 }
 
 bool toggle_neon(void *) {
@@ -225,14 +254,42 @@ void set_nixie_brightness() {
 
 void loop() {
 
-  if (new_time) {
-    update_nixie(0);
-    new_time = false;
+  switch (display_state) {
+  case DISP_STATE_TIME:
+    if (new_time) {
+      update_nixie_time();
+      pack_shift_data();
+      shift_out_nixie(0);
+    }
+    break;
+  case DISP_STATE_DATE:
+    if (new_time) {
+      update_nixie_date();
+      pack_shift_data();
+      shift_out_nixie(0);
+      if (millis() - start_millis > 3000) {
+        display_state = DISP_STATE_TIME;
+      }
+    }
+    break;
+  case DISP_STATE_ANTIPOISON:
+    update_nixie_antipoison();
     pack_shift_data();
     shift_out_nixie(0);
-    neon_state.toggle();
+    if (millis() - start_millis > 100) {
+      if (antipoison_cnt++ > 25) {
+        display_state = DISP_STATE_TIME;
+        antipoison_cnt = 0;
+      }
+      start_millis = millis();
+    }
+    break;
   }
 
+  if (new_time) {
+    neon_state.toggle();
+    new_time = false;
+  }
   delay(1);
   timer.tick();
 
@@ -246,7 +303,7 @@ void cmd_parse(String &bt_cmd) {
   int v = 0;
   int i;
   if ((i = bt_cmd.indexOf(':')) >= 0) {
-    String value_s(bt_cmd.substring(i+1));
+    String value_s(bt_cmd.substring(i + 1));
     v = atoi(value_s.c_str());
   }
 
@@ -258,7 +315,8 @@ void cmd_parse(String &bt_cmd) {
     options.twentyfour_hour = v;
   } else if (bt_cmd.startsWith("SS:")) {
     options.show_seconds = v;
-    Serial.print("show seconds: "); Serial.println(v);
+    Serial.print("show seconds: ");
+    Serial.println(v);
   } else if (bt_cmd.startsWith("H:") && (v != 0)) {
     new_utc = utc + v * 3600;
   } else if (bt_cmd.startsWith("M:") && (v != 0)) {
@@ -266,12 +324,29 @@ void cmd_parse(String &bt_cmd) {
   } else if (bt_cmd.startsWith("S:") && (v != 0)) {
     new_utc = utc + v;
   } else if (bt_cmd.startsWith("ZS:") && (v != 0)) {
+      switch (display_state) {
+          case DISP_STATE_TIME:
+              display_state = DISP_STATE_DATE;
+              break;
+          case DISP_STATE_DATE:
+              display_state = DISP_STATE_ANTIPOISON;
+              antipoison_cnt = 0;
+              break;
+          case DISP_STATE_ANTIPOISON:
+              display_state = DISP_STATE_TIME;
+              break;
+      }
+      start_millis = millis();
+  }
+#if 0
+  } else if (bt_cmd.startsWith("ZS:") && (v != 0)) {
     // zero seconds
     tmElements_t tm;
     breakTime(utc, tm);
     tm.Second = 0;
     new_utc = makeTime(tm);
   }
+#endif
   if (utc != new_utc) {
     Serial.print("Set time: ");
     printDateTime(new_utc, tcr->abbrev);
