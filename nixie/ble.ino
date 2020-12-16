@@ -65,3 +65,8 @@ bool ble_loop(String &cmd) {
   }
   return false;
 }
+
+void ble_output(String &s)
+{
+  sCharacteristic.setValue(s);
+}

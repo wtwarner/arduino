@@ -13,7 +13,7 @@
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
 
-extern void ds3231_setup(int clockSqwPin, void (*isr)(void));
+extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
 
 //
 // Pin assignments
@@ -32,11 +32,10 @@ byte builtin_led_state = 0;
 byte led_state = 0;
 
 byte nixie_digits[4] = {1, 2, 3, 4};
+byte nixie_dec_state[4] = {0, 0, 0, 0};
 byte shiftData[NUM_LEDS / 8] = {0};
 
 Timer<> timer;
-bool new_time = false;
-time_t utc = 0;
 
 struct options_t {
 public:
@@ -59,6 +58,26 @@ TimeChangeRule myPST = {"PST", First, Sun,
 Timezone myTZ(myPDT, myPST);
 TimeChangeRule *tcr; // pointer to the time change rule, use to get TZ abbrev
 
+struct time_state_t {
+  time_state_t():
+    new_time(false ),
+    utc(0),
+    local(0)
+  {}
+  void set_utc(time_t new_utc) {
+    if (new_utc != utc) {
+      new_time = true;
+      utc = new_utc; 
+      local = myTZ.toLocal(utc, &tcr);
+    }
+    
+  }
+  bool new_time;
+  time_t utc;
+  time_t local;
+};
+time_state_t time_state;
+
 struct neon_state_t {
   byte x;
   byte cnt;
@@ -76,8 +95,8 @@ struct neon_state_t {
 };
 neon_state_t neon_state = {254, 200};
 
-enum { DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_ANTIPOISON };
-static int display_state = DISP_STATE_TIME;
+enum { DISP_STATE_UNSET, DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_YEAR, DISP_STATE_ANTIPOISON };
+static int display_state = DISP_STATE_UNSET;
 static int antipoison_cnt = 0;
 static unsigned long start_millis = 0;
 
@@ -106,7 +125,9 @@ void setup() {
   }
   pinMode(clockSqwPin, INPUT_PULLUP);
 
-  ds3231_setup(clockSqwPin, onehz_interrupt);
+  if (ds3231_setup(clockSqwPin, onehz_interrupt)) {
+      display_state = DISP_STATE_TIME;
+  }
 
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
@@ -131,63 +152,88 @@ bool toggle_builtin_led(void *) {
 bool toggle_led(void *) {
   led_state = 1 - led_state;
 
-  for (int i = 0; i < 4; i++) {
-    digitalWrite(nixie_dec_pins[i], led_state); // fixme
-  }
-
   return true;
 }
 
-bool shift_out_nixie(void *) {
+void shift_out_nixie() {
   digitalWrite(latchPin, LOW);
   for (unsigned int i = 0; i < NUM_LEDS / 8; i++) {
     shiftOut(dataPin, clockPin, MSBFIRST, shiftData[i]);
   }
   digitalWrite(latchPin, HIGH);
-
-  return true;
-}
-
-bool check_time(void *) {
-  static time_t previous_utc = 0;
-  utc = ds3231_get_unixtime();
-  new_time = previous_utc != utc;
-  previous_utc = utc;
-
-  return true;
-}
-
-void update_nixie_time() {
-  time_t local = myTZ.toLocal(utc, &tcr);
-  printDateTime(local, tcr->abbrev);
-  const byte hour24 = hour(local);
-  const byte hour12or24 = options.twentyfour_hour ? hour24 : (hour24 % 12);
-  byte hour10 = hour12or24 / 10;
-  hour10 = (hour10 > 0) ? hour10 : 15; // blank leading 0
-  byte pm = options.twentyfour_hour ? 0 : (hour24 >= 12);
-  nixie_digits[3] = hour10;
-  nixie_digits[2] = hour12or24 % 10;
-  if (options.show_seconds) {
-    nixie_digits[1] = second(local) / 10;
-    nixie_digits[0] = second(local) % 10;
-  } else {
-    nixie_digits[1] = minute(local) / 10;
-    nixie_digits[0] = minute(local) % 10;
+  
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(nixie_dec_pins[i], nixie_dec_state[i] ? 1 : 0); // 255-nixie_dec_state[i]);
   }
 }
 
+bool check_time(void *) {
+
+  time_state.set_utc(ds3231_get_unixtime());
+
+  return true;
+}
+
+void update_nixie_unset() {
+  nixie_digits[3] = 1;
+  nixie_digits[2] = 2;
+  nixie_digits[1] = 0;
+  nixie_digits[0] = 0;
+  // fast flash all decimal points
+  for (int i = 0; i < 4; i++) {
+    nixie_dec_state[i] = builtin_led_state ? options.nixie_brightness : 0;
+  }
+}
+
+void update_nixie_time() {
+  
+  printDateTime(time_state.local, tcr->abbrev);
+  const byte hour24 = hour(time_state.local);
+  const byte hour12or24 = options.twentyfour_hour ? hour24 : (hour24 % 12);
+  byte hour10 = hour12or24 / 10;
+  hour10 = (hour10 > 0) ? hour10 : 15; // blank leading 0
+  const byte pm = options.twentyfour_hour ? 0 : (hour24 >= 12);
+  nixie_digits[3] = hour10;
+  nixie_digits[2] = hour12or24 % 10;
+  if (options.show_seconds) {
+    nixie_digits[1] = second(time_state.local) / 10;
+    nixie_digits[0] = second(time_state.local) % 10;
+  } else {
+    nixie_digits[1] = minute(time_state.local) / 10;
+    nixie_digits[0] = minute(time_state.local) % 10;
+  }
+  nixie_dec_state[0] = pm;
+  for (int i = 1; i < 4; i++) {
+    nixie_dec_state[i] = 0;
+  }
+
+}
+
 void update_nixie_date() {
-  time_t local = myTZ.toLocal(utc, &tcr);
-  const byte m = month(local);
+  const byte m = month(time_state.local);
   const byte m10 = m / 10;
   const byte m1 = m % 10;
-  const byte d = day(local);
+  const byte d = day(time_state.local);
   nixie_digits[3] = (m10 > 0) ? m10 : 0xf; // blank leading 0
   nixie_digits[2] = m1;
   nixie_digits[1] = d / 10;
   nixie_digits[0] = d % 10;
+
+  for (int i = 0; i < 4; i++) {
+    nixie_dec_state[i] = options.nixie_brightness;
+  }
 }
 
+void update_nixie_year() {
+  nixie_digits[3] = year(time_state.local) / 1000;
+  nixie_digits[2] = year(time_state.local) % 1000 / 100;
+  nixie_digits[1] = year(time_state.local) % 100 / 10;
+  nixie_digits[0] = year(time_state.local) % 10;
+
+  for (int i = 0; i < 4; i++) {
+    nixie_dec_state[i] = options.nixie_brightness;
+  }
+}
 static byte disused3[] = {0, 2, 3, 4, 5, 6, 7, 8, 9};
 static byte disused2[] = {0, 15};
 static byte disused1[] = {6, 7, 8, 9};
@@ -201,7 +247,11 @@ void update_nixie_antipoison() {
       disused1[antipoison_cnt % (sizeof(disused1) / sizeof(byte))];
   nixie_digits[0] =
       disused0[antipoison_cnt % (sizeof(disused0) / sizeof(byte))];
-  antipoison_cnt++;
+
+  for (int i = 0; i < 4; i++) {
+    nixie_dec_state[i] = (antipoison_cnt % 2) ? options.nixie_brightness : 0;
+  }
+
 }
 
 bool toggle_neon(void *) {
@@ -255,18 +305,33 @@ void set_nixie_brightness() {
 void loop() {
 
   switch (display_state) {
+    case DISP_STATE_UNSET:
+    update_nixie_unset();
+    pack_shift_data();
+    shift_out_nixie();
+    break;
   case DISP_STATE_TIME:
-    if (new_time) {
+    if (time_state.new_time) {
       update_nixie_time();
       pack_shift_data();
-      shift_out_nixie(0);
+      shift_out_nixie();
     }
     break;
   case DISP_STATE_DATE:
-    if (new_time) {
+    if (time_state.new_time) {
       update_nixie_date();
       pack_shift_data();
-      shift_out_nixie(0);
+      shift_out_nixie();
+      if (millis() - start_millis > 3000) {
+        display_state = DISP_STATE_TIME;
+      }
+    }
+    break;
+  case DISP_STATE_YEAR:
+    if (time_state.new_time) {
+      update_nixie_year();
+      pack_shift_data();
+      shift_out_nixie();
       if (millis() - start_millis > 3000) {
         display_state = DISP_STATE_TIME;
       }
@@ -275,20 +340,27 @@ void loop() {
   case DISP_STATE_ANTIPOISON:
     update_nixie_antipoison();
     pack_shift_data();
-    shift_out_nixie(0);
+    shift_out_nixie();
     if (millis() - start_millis > 100) {
-      if (antipoison_cnt++ > 25) {
+      if (--antipoison_cnt == 0) {
         display_state = DISP_STATE_TIME;
-        antipoison_cnt = 0;
+        
       }
       start_millis = millis();
     }
     break;
   }
 
-  if (new_time) {
+  if (time_state.new_time) {
     neon_state.toggle();
-    new_time = false;
+    time_state.new_time = false;
+
+    if (hour(time_state.utc) == 5 &&
+        minute(time_state.utc) == 13 && 
+        second(time_state.utc) == 0 && display_state != DISP_STATE_ANTIPOISON) {
+          display_state = DISP_STATE_ANTIPOISON;
+          antipoison_cnt = 600;
+        }
   }
   delay(1);
   timer.tick();
@@ -307,7 +379,7 @@ void cmd_parse(String &bt_cmd) {
     v = atoi(value_s.c_str());
   }
 
-  time_t new_utc = utc;
+  time_t new_utc = time_state.utc;
   if (bt_cmd.startsWith("B:")) {
     options.nixie_brightness = v;
     set_nixie_brightness();
@@ -318,19 +390,23 @@ void cmd_parse(String &bt_cmd) {
     Serial.print("show seconds: ");
     Serial.println(v);
   } else if (bt_cmd.startsWith("H:") && (v != 0)) {
-    new_utc = utc + v * 3600;
+    new_utc += v * 3600;
   } else if (bt_cmd.startsWith("M:") && (v != 0)) {
-    new_utc = utc + v * 60;
+    new_utc += v * 60;
   } else if (bt_cmd.startsWith("S:") && (v != 0)) {
-    new_utc = utc + v;
+    new_utc += v;
   } else if (bt_cmd.startsWith("ZS:") && (v != 0)) {
+      // rotate among 3 modes 
       switch (display_state) {
           case DISP_STATE_TIME:
               display_state = DISP_STATE_DATE;
               break;
           case DISP_STATE_DATE:
+              display_state = DISP_STATE_YEAR;
+              break;
+         case DISP_STATE_YEAR:
               display_state = DISP_STATE_ANTIPOISON;
-              antipoison_cnt = 0;
+              antipoison_cnt = 300;
               break;
           case DISP_STATE_ANTIPOISON:
               display_state = DISP_STATE_TIME;
@@ -339,6 +415,7 @@ void cmd_parse(String &bt_cmd) {
       start_millis = millis();
   }
 #if 0
+// FIXME 
   } else if (bt_cmd.startsWith("ZS:") && (v != 0)) {
     // zero seconds
     tmElements_t tm;
@@ -347,10 +424,12 @@ void cmd_parse(String &bt_cmd) {
     new_utc = makeTime(tm);
   }
 #endif
-  if (utc != new_utc) {
+  if (time_state.utc != new_utc) {
     Serial.print("Set time: ");
     printDateTime(new_utc, tcr->abbrev);
+    time_state.set_utc(new_utc);
     ds3231_set(new_utc);
+    display_state = DISP_STATE_TIME;
   }
 }
 

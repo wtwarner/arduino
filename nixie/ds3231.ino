@@ -11,18 +11,18 @@
 
 static RTC_DS3231 rtc;
 
-void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
-
+bool ds3231_setup(int clockSqwPin, void (*isr)(void)) {
+  bool rc = true;
   // initializing the rtc
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC!");
-    Serial.flush();
-    abort();
+    rc = false;
   }
 
   if (rtc.lostPower()) {
     // this will adjust to the date and time at compilation
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    rc = false;
   }
 
   // we don't need the 32K Pin, so disable it
@@ -41,6 +41,8 @@ void ds3231_setup(int clockSqwPin, void (*isr)(void)) {
 
   // attachInterrupt(digitalPinToInterrupt(clockSqwPin), isr, RISING);
   // rtc.writeSqwPinMode(DS3231_SquareWave1Hz);
+
+  return rc;
 }
 
 time_t ds3231_get_unixtime(void) { return rtc.now().unixtime(); }
