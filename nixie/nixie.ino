@@ -239,15 +239,21 @@ static byte disused2[] = {0, 15};
 static byte disused1[] = {6, 7, 8, 9};
 static byte disused0[] = {15};
 void update_nixie_antipoison() {
-  nixie_digits[3] =
-      disused3[antipoison_cnt % (sizeof(disused3) / sizeof(byte))];
-  nixie_digits[2] =
-      disused2[antipoison_cnt % (sizeof(disused2) / sizeof(byte))];
-  nixie_digits[1] =
-      disused1[antipoison_cnt % (sizeof(disused1) / sizeof(byte))];
-  nixie_digits[0] =
-      disused0[antipoison_cnt % (sizeof(disused0) / sizeof(byte))];
-
+  if (options.show_seconds) {
+    for (int i = 0; i < 4; i++) {
+      nixie_digits[i] = (antipoison_cnt/10 + i) % 10;
+    }
+  }
+  else {
+    nixie_digits[3] =
+        disused3[antipoison_cnt % (sizeof(disused3) / sizeof(byte))];
+    nixie_digits[2] =
+        disused2[antipoison_cnt % (sizeof(disused2) / sizeof(byte))];
+    nixie_digits[1] =
+        disused1[antipoison_cnt % (sizeof(disused1) / sizeof(byte))];
+    nixie_digits[0] =
+        disused0[antipoison_cnt % (sizeof(disused0) / sizeof(byte))];
+  }
   for (int i = 0; i < 4; i++) {
     nixie_dec_state[i] = (antipoison_cnt % 2) ? options.nixie_brightness : 0;
   }
@@ -387,8 +393,6 @@ void cmd_parse(String &bt_cmd) {
     options.twentyfour_hour = v;
   } else if (bt_cmd.startsWith("SS:")) {
     options.show_seconds = v;
-    Serial.print("show seconds: ");
-    Serial.println(v);
   } else if (bt_cmd.startsWith("H:") && (v != 0)) {
     new_utc += v * 3600;
   } else if (bt_cmd.startsWith("M:") && (v != 0)) {
