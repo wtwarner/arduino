@@ -28,29 +28,35 @@ void setup() {
 
 }
 
-void advance(int i, bool on_blank) {
+enum digit_t { DIG_BLANK, DIG_1, DIG_2, DIG_3, DIG_4, DIG_5,
+  DIG_6, DIG_7, DIG_8, DIG_9, DIG_0 };
+digit_t digits[4] = {DIG_BLANK};
+byte dig_to_num[11] = {-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0};
+byte num_to_dig[10] = {DIG_0, DIG_1, DIG_2, DIG_3, DIG_4, DIG_5, DIG_6, DIG_7, DIG_8, DIG_9};
+
+void advance(int i) {
+  const byte on_blank = digitalRead(status_pin[i]);
   digitalWrite(on_blank ? tr_blank_pin[i] : tr_pin[i], 1);
 
   digitalWrite(LED_BUILTIN, 1);
   delay(MIN_DELAY);
   digitalWrite(on_blank ? tr_blank_pin[i] : tr_pin[i], 0);
   digitalWrite(LED_BUILTIN, 0);
+  digits[i] = (digits[i] + 1) % 11;
+  delay(MIN_DELAY);
 }
-
-int digits[4] = {0};
 
 bool to_blank(int i)
 {
-  int cnt = 12;
+  byte cnt = 12;
   while (-- cnt) {
     byte on_blank = digitalRead(status_pin[i]);
     Serial.print(i); Serial.print(": Blank? "); Serial.println(on_blank);
     if (on_blank) {
-      digits[i] = 11;
+      digits[i] = DIG_BLANK;
       return true;
     }
-    advance(i, on_blank);
-    delay(MIN_DELAY);
+    advance(i);
   }
   Serial.println("FAIL to_blank");
   return false;
@@ -60,16 +66,16 @@ void loop() {
     to_blank(i);
   }
   delay(1000);
-  int val[2] = {6, 9};
+  byte val[2] = {2, 0};
   for (int i = 0; i < 2; i++) {
     
-    while (digits[i] != val[i]) {
-      advance(i, digits[i] == 11);
-      digits[i] = (digits[i] + 1) % 11;
+    while (dig_to_num[digits[i]] != val[i]) {
+      advance(i);
+      
       Serial.print(i); Serial.print(": = ");
-      if (digits[i] == 11) Serial.println("(blank)");
-      else Serial.println((digits[i]) % 10);
-      delay(MIN_DELAY);
+      if (digits[i] == DIG_BLANK) Serial.println("(blank)");
+      else Serial.println(dig_to_num[digits[i]]);
+
     }
   }
   delay(1000);
