@@ -188,11 +188,10 @@ void update_nixie_unset() {
 void update_nixie_time() {
   
   printDateTime(time_state.local, tcr->abbrev);
-  const byte hour24 = hour(time_state.local);
-  const byte hour12or24 = options.twentyfour_hour ? hour24 : (hour24 % 12);
+  const byte hour12or24 = options.twentyfour_hour ? hour(time_state.local) : hourFormat12(time_state.local);
   byte hour10 = hour12or24 / 10;
   hour10 = (hour10 > 0) ? hour10 : 15; // blank leading 0
-  const byte pm = options.twentyfour_hour ? 0 : (hour24 >= 12);
+  const byte pm = options.twentyfour_hour ? 0 : isPM(time_state.local);
   nixie_digits[3] = hour10;
   nixie_digits[2] = hour12or24 % 10;
   if (options.show_seconds) {
