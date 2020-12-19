@@ -12,6 +12,7 @@
 #include <TimeLib.h>
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
+#include <ArduinoLog.h>
 
 extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
 
@@ -39,11 +40,35 @@ Timer<> timer;
 
 struct options_t {
 public:
-  options_t()
-      : nixie_brightness(255), twentyfour_hour(false), show_seconds(false) {}
+    options_t() {
+        to_defaults();
+    }
+    void to_defaults() {
+        nixie_brightness = 255;
+        twentyfour_hour = false;
+        show_seconds = false;
+        neon_gamma = true;
+        neon_start = 254;
+        neon_steps = 100;
+        neon_stepsize = 1;
+        neon_timestep = 10;
+
+        antipoison_hour = 5;
+        antipoison_min = 13;
+        antipoison_duration_ms = 600;
+    }
   byte nixie_brightness;
   bool twentyfour_hour;
   bool show_seconds;
+  bool neon_gamma;
+  byte neon_start;
+  byte neon_steps;
+  byte neon_stepsize;
+  byte neon_timestep;
+
+  byte antipoison_hour;
+  byte antipoison_min;
+  int antipoison_duration_ms;
 };
 
 options_t options;
@@ -70,7 +95,6 @@ struct time_state_t {
       utc = new_utc; 
       local = myTZ.toLocal(utc, &tcr);
     }
-    
   }
   bool new_time;
   time_t utc;
@@ -79,21 +103,26 @@ struct time_state_t {
 time_state_t time_state;
 
 struct neon_state_t {
+  neon_state_t() {
+      reset();
+  }
+  void reset() {
+    flop = 0;
+    x = options.neon_start;
+    cnt = options.neon_steps;
+  }
+  void toggle() {
+    cnt = options.neon_steps;
+    x = options.neon_start;
+    flop = 1 - flop;
+  }
+
   byte x;
   byte cnt;
   byte flop;
-  void reset() {
-    flop = 0;
-    x = 254;
-    cnt = 100;
-  }
-  void toggle() {
-    cnt = 100;
-    x = 254;
-    flop = 1 - flop;
-  }
+  Timer<>::Task timer_handle;
 };
-neon_state_t neon_state = {254, 200};
+neon_state_t neon_state;
 
 enum { DISP_STATE_UNSET, DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_YEAR, DISP_STATE_ANTIPOISON };
 static int display_state = DISP_STATE_UNSET;
@@ -110,7 +139,8 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("Starting");
+  Log.begin(LOG_LEVEL_VERBOSE, &Serial);
+  Log.trace("Starting\n");
 
   // initialize digital pin LED_BUILTIN as an output.
   pinMode(LED_BUILTIN, OUTPUT);
@@ -132,10 +162,12 @@ void setup() {
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
   timer.every(2000, toggle_led);
-  timer.every(10, toggle_neon);
 
   // wifi_setup();
   ble_setup();
+
+  neon_state.reset();
+  neon_state.timer_handle = timer.every(options.neon_timestep, toggle_neon);
 }
 
 void onehz_interrupt() {
@@ -261,7 +293,7 @@ void update_nixie_antipoison() {
 
 bool toggle_neon(void *) {
 
-  byte g = gamma8(neon_state.x);
+  byte g = options.neon_gamma ? gamma8(neon_state.x) : neon_state.x;
 
   analogWrite(neonPins[0], neon_state.flop ? g : 1);
   analogWrite(neonPins[1], neon_state.flop ? 1 : g);
@@ -360,11 +392,11 @@ void loop() {
     neon_state.toggle();
     time_state.new_time = false;
 
-    if (hour(time_state.utc) == 5 &&
-        minute(time_state.utc) == 13 && 
-        second(time_state.utc) == 0 && display_state != DISP_STATE_ANTIPOISON) {
+    if (((hour(time_state.local) == options.antipoison_hour) || (options.antipoison_hour >= 24)) &&
+        ((minute(time_state.local) == options.antipoison_min) || (options.antipoison_min >= 60)) && 
+        second(time_state.local) == 0 && display_state != DISP_STATE_ANTIPOISON) {
           display_state = DISP_STATE_ANTIPOISON;
-          antipoison_cnt = 600;
+          antipoison_cnt = options.antipoison_duration_ms / 100 + 1;
         }
   }
   delay(1);
@@ -409,7 +441,7 @@ void cmd_parse(String &bt_cmd) {
               break;
          case DISP_STATE_YEAR:
               display_state = DISP_STATE_ANTIPOISON;
-              antipoison_cnt = 300;
+              antipoison_cnt = options.antipoison_duration_ms / 100 + 1;
               break;
           case DISP_STATE_ANTIPOISON:
               display_state = DISP_STATE_TIME;
@@ -417,16 +449,32 @@ void cmd_parse(String &bt_cmd) {
       }
       start_millis = millis();
   }
-#if 0
-// FIXME 
-  } else if (bt_cmd.startsWith("ZS:") && (v != 0)) {
-    // zero seconds
-    tmElements_t tm;
-    breakTime(utc, tm);
-    tm.Second = 0;
-    new_utc = makeTime(tm);
+  else if (bt_cmd.startsWith("set-time:")) { // local "ISO 8601" format e.g. 2020-06-25T15:29:37
+      time_t local_time = datetime_parse(bt_cmd.substring(bt_cmd.indexOf(':') + 1));
+      new_utc = myTZ.toUTC(local_time);
   }
-#endif
+  else if (bt_cmd.startsWith("set-neon:")) {
+      char s[100];              // local copy to allow modification by strtok
+      strlcpy(s, bt_cmd.c_str(), sizeof(s));
+      char *pch = strtok(s + bt_cmd.indexOf(':') + 1, " ");
+      if (pch != 0) { options.neon_gamma = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_start = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_steps = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_stepsize = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_timestep = atoi(pch); pch = strtok(0, " "); }
+
+      timer.cancel(neon_state.timer_handle);
+      neon_state.timer_handle = timer.every(options.neon_timestep, toggle_neon);
+  }
+  else if (bt_cmd.startsWith("set-ap:")) {
+      char s[100];              // local copy to allow modification by strtok
+      strlcpy(s, bt_cmd.c_str(), sizeof(s));
+      char *pch = strtok(s + bt_cmd.indexOf(':') + 1, " ");
+      if (pch != 0) { options.antipoison_hour = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.antipoison_min = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.antipoison_duration_ms = atoi(pch); pch = strtok(0, " "); }
+      Log.trace("set antipoison %d:%d duration %d\n", options.antipoison_hour, options.antipoison_min, options.antipoison_duration_ms);
+  }
   if (time_state.utc != new_utc) {
     Serial.print("Set time: ");
     printDateTime(new_utc, tcr->abbrev);

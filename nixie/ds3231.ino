@@ -51,3 +51,8 @@ void ds3231_set(time_t unix_time_utc) {
   DateTime td(unix_time_utc);
   rtc.adjust(td);
 }
+
+time_t datetime_parse(const String &s) {
+    DateTime dt(s.c_str());
+    return dt.unixtime();
+}
