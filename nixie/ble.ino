@@ -20,7 +20,7 @@
 
 BLEService nixieService("ffe0"); // create service
 BLEStringCharacteristic sCharacteristic("FFE1",
-                                        BLERead | BLEWriteWithoutResponse, 16);
+                                        BLERead | BLEWriteWithoutResponse, 64);
 BLEDescriptor sDescriptor("2901", "Nixie command");
 
 void ble_setup() {

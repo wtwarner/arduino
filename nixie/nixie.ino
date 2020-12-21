@@ -9,6 +9,11 @@
      16..19   Nixie 3
      20..23   Nixie 2
   */
+
+/*
+ Decimal points:
+  x 0 1 x
+  */
 #include <TimeLib.h>
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
@@ -25,7 +30,7 @@ const int dataPin = 20;
 const int dimPin = 16; // pwm nixie
 const int clockSqwPin = 21;
 const int neonPins[] = {2, 3};
-const int nixie_dec_pins[] = {9, 10, 11, 12};
+const int nixie_dec_pins[] = {10, 11, 12, 9};
 
 const int NUM_LEDS = 24;
 
@@ -233,11 +238,10 @@ void update_nixie_time() {
     nixie_digits[1] = minute(time_state.local) / 10;
     nixie_digits[0] = minute(time_state.local) % 10;
   }
-  nixie_dec_state[0] = pm;
-  for (int i = 1; i < 4; i++) {
+  for (int i = 0; i < 4; i++) {
     nixie_dec_state[i] = 0;
   }
-
+  nixie_dec_state[1] = pm;
 }
 
 void update_nixie_date() {
