@@ -3,7 +3,7 @@
 const int tr_pin[4] = {10, 7};
 const int tr_blank_pin[4] = {9, 12};
 const int status_pin[4] = {8, 11};
-const int MIN_DELAY = 180;
+const int MIN_DELAY = 120;
 
 class tr_digit_t {
 public:
@@ -177,8 +177,15 @@ void loop() {
   Log.trace("To blank\n");
   tr_digit_t::digit_t blanks[2] = {tr_digit_t::DIG_BLANK, tr_digit_t::DIG_BLANK};
   go_to(blanks);
+  delay(3000);
 
   Log.trace("To values\n");
   tr_digit_t::digit_t vals[2] = {tr_digit_t::num_to_digit[6], tr_digit_t::num_to_digit[9]};
   go_to(vals);
+  delay(3000);
+
+  Log.trace("To values\n");
+  tr_digit_t::digit_t vals2[2] = {tr_digit_t::num_to_digit[3], tr_digit_t::num_to_digit[4]};
+  go_to(vals2);
+  delay(3000);
 }
