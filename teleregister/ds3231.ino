@@ -11,7 +11,7 @@
 
 static RTC_DS3231 rtc;
 
-bool ds3231_setup(int clockSqwPin, void (*isr)(void)) {
+bool ds3231_setup() {
   bool rc = true;
   // initializing the rtc
   if (!rtc.begin()) {
@@ -50,6 +50,8 @@ time_t ds3231_get_unixtime(void) { return rtc.now().unixtime(); }
 void ds3231_set(time_t unix_time_utc) {
   DateTime td(unix_time_utc);
   rtc.adjust(td);
+  Serial.println("DS3231 Set");
+  printDateTime(unix_time_utc, "UTC");
 }
 
 time_t datetime_parse(const String &s) {

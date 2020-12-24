@@ -7,11 +7,12 @@
 #include <arduino-timer.h>
 #include <ArduinoLog.h>
 
-extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
+extern bool ds3231_setup();
 
 const byte NUM_TR_DIGITS = 4;
-const byte tr_nonblank_pin[] = {2, 11, 9, 7};
-const byte tr_blank_pin[] = {12, 10, 8, 4};
+#define TEST_DIGIT 0
+const byte tr_blank_pin[] = {2, 11, 9, 7};
+const byte tr_nonblank_pin[] = {12, 10, 8, 4};
 const byte status_pin[] = {17, 16, 15, 14};
 const int MIN_DELAY = 120;
 
@@ -75,7 +76,8 @@ public:
         digit(DIG_BLANK),
         deadline_millis(0),
         prev_millis(0),
-        name(0)
+        name(0),
+	unknown(true)
     {}
 
      void begin(byte tr_nonblank_pin_, byte tr_blank_pin_, byte status_pin_, byte nm_) {
@@ -103,12 +105,14 @@ public:
     // returns false if busy
     bool set(digit_t target_) {
         if (act_state == ACT_IDLE) {
+	  if (unknown || digit != target_) {
             target_digit = target_;
             act_state = ACT_ASSERTED;
             actuate(1);
             Log.trace("%d: start, to ASSERT\n", name);
             return true;
-        }
+	  }
+	}
         return false;
     }
     bool is_idle() {
@@ -137,17 +141,17 @@ public:
             case ACT_DEASSERTED:
                 if (timeout) {
                     digit = static_cast<digit_t>((static_cast<int>(digit) + 1) % 11);
-                    if (digit == DIG_BLANK) Log.trace("%d: (blank)\n", name);
-                    else Log.trace("%d: %d\n", name, digit_to_num[digit]);
+                    if (digit == DIG_BLANK) Log.trace("%d: deassert, on (blank)\n", name);
+                    else Log.trace("%d: deassert, on %d\n", name, digit_to_num[digit]);
 
-                    if (digit == target_digit) {
+                    if (!unknown && digit == target_digit) {
                         act_state = ACT_IDLE;
                         Log.trace("%d: done, to IDLE\n", name);
                     }
                     else {
                         act_state = ACT_ASSERTED;
                         actuate(1);
-                        Log.trace("%d: to ASSERT\n", name);
+                        Log.trace("%d: not done, target %d, back to ASSERT\n", name, digit_to_num[target_digit]);
                     }
                 }
                 break;
@@ -169,13 +173,19 @@ private:
     unsigned long prev_millis;
     digit_t target_digit;
     byte name;                  // for debug messages
+    bool unknown;
 
+  bool check_blank() {
+    const byte on_blank = digitalRead(status_pin);
+    if (on_blank) {
+      digit = DIG_BLANK;
+      unknown = false;
+    }
+    return on_blank;
+  }
     void actuate(byte on) {
-        const byte on_blank = on ? digitalRead(status_pin) : 0; // for off, don't care about blank state
+        const byte on_blank = on ? check_blank() : 0; // for off, don't care about blank state
         digitalWrite(on_blank ? tr_blank_pin : tr_nonblank_pin, on);
-        if (on_blank) {
-            digit = DIG_BLANK;
-        }
         // in 'off', conservatively deassert both pins
         if (!on) {
             digitalWrite(on_blank ? tr_nonblank_pin : tr_blank_pin, 0);
@@ -197,13 +207,13 @@ tr_digit_t tr_digits[NUM_TR_DIGITS];
 
 bool check_time(void *) {
 
-    //time_state.set_utc(ds3231_get_unixtime());  FIXME
+    time_state.set_utc(ds3231_get_unixtime());
 
   return true;
 }
 
 void update_tr_unset() {
-    for (int i = 0; i < NUM_TR_DIGITS; i++) {
+  for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
       tr_digits[i].set(tr_digit_t::DIG_BLANK);
     }
   // fast flash all decimal points  FIXME
@@ -224,7 +234,7 @@ void update_tr_time() {
         digs[1] = tr_digit_t::num_to_digit[minute(time_state.local) / 10];
         digs[0] = tr_digit_t::num_to_digit[minute(time_state.local) % 10];
     }
-    for (int i = 0; i < NUM_TR_DIGITS; i++) {
+    for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
         tr_digits[i].set(digs[i]);
     }
     // FIXME set AM/PM?
@@ -275,23 +285,23 @@ void setup() {
   
   pinMode(LED_BUILTIN, OUTPUT);
   
-  // if (ds3231_setup(clockSqwPin, onehz_interrupt)) {
-  //     display_state = DISP_STATE_TIME;
-  // }
-  time_state.set_utc(datetime_compile()); // FIXME
-  display_state = DISP_STATE_TIME;
+  if (ds3231_setup()) {
+      display_state = DISP_STATE_TIME;
+  }
+  //ds3231_set(myTZ.toUTC(datetime_compile())); // initialize 1st time
 
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
 }
 
 bool toggle_builtin_led(void *) {
-  digitalWrite(LED_BUILTIN, builtin_led_state);
+  //digitalWrite(LED_BUILTIN, builtin_led_state);
   builtin_led_state = 1 - builtin_led_state;
 
   return true;
 }
 
+#if 0
 void go_to(tr_digit_t::digit_t vals[NUM_TR_DIGITS])
 {
   for (int i = 0; i < NUM_TR_DIGITS; i++) {
@@ -314,6 +324,8 @@ void go_to(tr_digit_t::digit_t vals[NUM_TR_DIGITS])
       Log.error("FAIL to go_to\n");
   }
 }
+#endif
+
 
 void loop() {
 #if 0
@@ -334,16 +346,25 @@ void loop() {
 
   #endif
 
-  Log.trace("Status: %d  %d  %d  %d\n",
-            digitalRead(status_pin[0]),
-            digitalRead(status_pin[1]),
-            digitalRead(status_pin[2]),
-            digitalRead(status_pin[3]));
+  //Log.trace("Status: %d  %d  %d  %d\n",
+  //          digitalRead(status_pin[3]),
+  //          digitalRead(status_pin[2]),
+  //          digitalRead(status_pin[1]),
+  //          digitalRead(status_pin[0]));
+  //printDateTime(time_state.local, tcr->abbrev);
 
-  delay(1000);
+  #if 0
+  digitalWrite(digitalRead(status_pin[1]) ? tr_blank_pin[1] : tr_nonblank_pin[1], 1);
+  digitalWrite(LED_BUILTIN, 1);
+  delay(200);
+  digitalWrite(tr_blank_pin[1], 0);
+  digitalWrite(tr_nonblank_pin[1], 0);
+  digitalWrite(LED_BUILTIN, 0);
+#endif
 
+#if 1
   bool idle = true;
-  for (int i = 0; i < 1; i++) { // FIXME TEST
+  for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
       tr_digits[i].loop();
       idle = idle && tr_digits[i].is_idle();
   }
@@ -375,9 +396,8 @@ void loop() {
           }
           break;
   }
-    
+#endif    
   if (time_state.new_time) {
-      //neon_state.toggle();
     time_state.new_time = false;
   }
 
