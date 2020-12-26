@@ -23,7 +23,7 @@
 
 #include <Arduino.h>
 
-#define IRMP_INPUT_PIN   PIN_A0 // To be compatible with interrupt example, pin 3 is chosen here (which is default).
+#define IRMP_INPUT_PIN   21
 #define IRMP_SUPPORT_NEC_PROTOCOL 1
 
 /*
@@ -39,10 +39,12 @@ void setup()
     delay(2000);
 
     irmp_init();
+
 }
 
 void loop()
 {
+    int pwm = -1;
     if (irmp_get_data(&irmp_data) && irmp_data.address == 0xff00)
     {
         /*
@@ -65,25 +67,26 @@ void loop()
             case 0x15: Serial.println("vol-"); break;
             case 0x09: Serial.println("up"); break;
 
-            case 0x16: Serial.println("0"); break;
+            case 0x16: Serial.println("0"); pwm = 0; break;
             case 0x19: Serial.println("EQ"); break;
             case 0x0d: Serial.println("st/rept"); break;
 
-            case 0x0c: Serial.println("1"); break;
-            case 0x18: Serial.println("2"); break;
-            case 0x5e: Serial.println("3"); break;
+            case 0x0c: Serial.println("1"); pwm = 1; break;
+            case 0x18: Serial.println("2"); pwm = 2; break;
+            case 0x5e: Serial.println("3"); pwm = 3; break;
 
-            case 0x08: Serial.println("4"); break;
-            case 0x1c: Serial.println("5"); break;
-            case 0x5a: Serial.println("6"); break;
+            case 0x08: Serial.println("4"); pwm = 4; break;
+            case 0x1c: Serial.println("5"); pwm = 5; break;
+            case 0x5a: Serial.println("6"); pwm = 6; break;
 
-            case 0x42: Serial.println("7"); break;
-            case 0x52: Serial.println("8"); break;
-            case 0x4a: Serial.println("9"); break;
+            case 0x42: Serial.println("7"); pwm = 7; break;
+            case 0x52: Serial.println("8"); pwm = 8; break;
+            case 0x4a: Serial.println("9"); pwm = 9; break;
 
             default:
                 Serial.println("?"); break;
          }
+
     }
 
   delay(2);
