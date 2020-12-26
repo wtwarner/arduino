@@ -5,16 +5,23 @@
 #include <TimeLib.h>
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
+#include <Arduino.h>
 #include <ArduinoLog.h>
+#include <Adafruit_NeoPixel.h>
+#include <EEPROM.h>
+#include "ir.h"
 
 extern bool ds3231_setup();
 
 const byte NUM_TR_DIGITS = 4;
-#define TEST_DIGIT 0
+const int MIN_DELAY = 120;
+
 const byte tr_blank_pin[] = {2, 11, 9, 7};
 const byte tr_nonblank_pin[] = {12, 10, 8, 4};
 const byte status_pin[] = {17, 16, 15, 14};
-const int MIN_DELAY = 120;
+const byte neo_pin = 20;
+//#define IRMP_INPUT_PIN 21 in ir.ino
+const byte colon_led_pins[2] = { 5, 6 };
 
 byte builtin_led_state = 0;
 
@@ -26,13 +33,25 @@ public:
         to_defaults();
     }
     void to_defaults() {
-        brightness = 255;
+        sentinel1 = 0xba;
+        neo_brightness = 160;
+        neo_color = (255ull << 16) | (147ull << 8) | 41ull; // warm white
         twentyfour_hour = false;
         show_seconds = false;
+        sentinel2 = 0xbe;
     }
-  byte brightness;
+    void validate() {
+        if (sentinel1 != 0xba || sentinel2 != 0xbe) {
+            to_defaults();
+        }
+    }
+  byte sentinel1;
+  short neo_brightness;
+  uint32_t neo_color;
   bool twentyfour_hour;
   bool show_seconds;
+  byte sentinel2;
+    
 };
 
 options_t options;
@@ -69,6 +88,9 @@ time_state_t time_state;
 enum { DISP_STATE_UNSET, DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_YEAR};
 static int display_state = DISP_STATE_UNSET;
 static unsigned long start_millis = 0;
+
+static const byte NUM_NEOPIXELS = 4;
+Adafruit_NeoPixel neo_strip(NUM_NEOPIXELS, neo_pin, NEO_GRB + NEO_KHZ800);
 
 class tr_digit_t {
 public:
@@ -213,7 +235,7 @@ bool check_time(void *) {
 }
 
 void update_tr_unset() {
-  for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
+  for (int i = 0; i < NUM_TR_DIGITS; i++) {
       tr_digits[i].set(tr_digit_t::DIG_BLANK);
     }
   // fast flash all decimal points  FIXME
@@ -234,7 +256,7 @@ void update_tr_time() {
         digs[1] = tr_digit_t::num_to_digit[minute(time_state.local) / 10];
         digs[0] = tr_digit_t::num_to_digit[minute(time_state.local) % 10];
     }
-    for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
+    for (int i = 0; i < NUM_TR_DIGITS; i++) {
         tr_digits[i].set(digs[i]);
     }
     // FIXME set AM/PM?
@@ -267,8 +289,19 @@ void update_tr_year() {
 
 }
 
-void setup() {
+void neo_set_color() {
+  for (int i=0; i < NUM_NEOPIXELS; i++) {
+    neo_strip.setPixelColor(i, options.neo_color);
+  }
+  neo_strip.setBrightness(options.neo_brightness);
+  neo_strip.show();
+}
 
+void setup() {
+  neo_strip.begin();
+  neo_set_color();
+  ir_setup();
+  
   Serial.begin(9600);
   int timeout = 200;
   while (!Serial && --timeout) {
@@ -279,92 +312,47 @@ void setup() {
 
   Log.begin(LOG_LEVEL_VERBOSE, &Serial);
   Log.trace("Starting\n");
+  EEPROM.get(0, options);
+  options.validate();
+  EEPROM.put(0, options);
+  
   for (int i = 0; i < NUM_TR_DIGITS; i ++) {
       tr_digits[i].begin(tr_nonblank_pin[i], tr_blank_pin[i], status_pin[i], i);
   }
   
   pinMode(LED_BUILTIN, OUTPUT);
-  
+  for (int i = 0; i < 2; i ++) {
+      pinMode(colon_led_pins[i], OUTPUT);
+  }
   if (ds3231_setup()) {
       display_state = DISP_STATE_TIME;
   }
   //ds3231_set(myTZ.toUTC(datetime_compile())); // initialize 1st time
 
   timer.every(250, toggle_builtin_led);
+  timer.every(500, toggle_colon_led);
   timer.every(200, check_time);
 }
 
 bool toggle_builtin_led(void *) {
-  //digitalWrite(LED_BUILTIN, builtin_led_state);
+  digitalWrite(LED_BUILTIN, builtin_led_state);
   builtin_led_state = 1 - builtin_led_state;
 
   return true;
 }
 
-#if 0
-void go_to(tr_digit_t::digit_t vals[NUM_TR_DIGITS])
-{
-  for (int i = 0; i < NUM_TR_DIGITS; i++) {
-      tr_digits[i].set(vals[i]);
-  }
-  unsigned long start_millis = millis();
-  bool idle = false;
-  while ((millis() - start_millis) < 5000) {
-      idle = true;
-      for (int i = 0; i < NUM_TR_DIGITS; i++) {
-          tr_digits[i].loop();
-          idle = idle && tr_digits[i].is_idle();
-      }
-      if (idle) {
-          break;
-      }
-      delay(10);
-  }
-  if (!idle) {
-      Log.error("FAIL to go_to\n");
-  }
+bool toggle_colon_led(void *) {
+    byte state = digitalRead(colon_led_pins[0]);
+    digitalWrite(colon_led_pins[0], 1 - state);
+    digitalWrite(colon_led_pins[1], state);
+
+  return true;
 }
-#endif
 
 
 void loop() {
-#if 0
-  Log.trace("To blank\n");
-  tr_digit_t::digit_t blanks[NUM_TR_DIGITS] = {tr_digit_t::DIG_BLANK};
-  go_to(blanks);
-  delay(3000);
-
-  Log.trace("To values\n");
-  tr_digit_t::digit_t vals[NUM_TR_DIGITS] = {tr_digit_t::num_to_digit[6]};
-  go_to(vals);
-  delay(3000);
-
-  Log.trace("To values\n");
-  tr_digit_t::digit_t vals2[NUM_TR_DIGITS] = {tr_digit_t::num_to_digit[3]};
-  go_to(vals2);
-  delay(3000);
-
-  #endif
-
-  //Log.trace("Status: %d  %d  %d  %d\n",
-  //          digitalRead(status_pin[3]),
-  //          digitalRead(status_pin[2]),
-  //          digitalRead(status_pin[1]),
-  //          digitalRead(status_pin[0]));
-  //printDateTime(time_state.local, tcr->abbrev);
-
-  #if 0
-  digitalWrite(digitalRead(status_pin[1]) ? tr_blank_pin[1] : tr_nonblank_pin[1], 1);
-  digitalWrite(LED_BUILTIN, 1);
-  delay(200);
-  digitalWrite(tr_blank_pin[1], 0);
-  digitalWrite(tr_nonblank_pin[1], 0);
-  digitalWrite(LED_BUILTIN, 0);
-#endif
-
-#if 1
   bool idle = true;
-  for (int i = 0; i < 4/*NUM_TR_DIGITS*/; i++) {
+  for (int i = 0; i < NUM_TR_DIGITS; i++) {
       tr_digits[i].loop();
       idle = idle && tr_digits[i].is_idle();
   }
@@ -396,9 +384,47 @@ void loop() {
           }
           break;
   }
-#endif    
+
   if (time_state.new_time) {
     time_state.new_time = false;
+  }
+
+  ir_cmd_t ir_cmd;
+  bool ir_rep;
+  if (ir_check(ir_cmd, ir_rep)) {
+      switch (ir_cmd) {
+          case IR_FF:
+              if (!ir_rep)
+                  options.show_seconds = 1 - options.show_seconds;
+              break;
+          case IR_FUNCSTOP:
+              if (ir_rep) {
+                  ; // nop
+              }
+              else if (display_state == DISP_STATE_TIME) {
+                  display_state = DISP_STATE_DATE;
+                  start_millis = millis();
+              }
+              else if (display_state == DISP_STATE_DATE) {
+                  display_state = DISP_STATE_YEAR;
+                  start_millis = millis();
+              }
+              else if (display_state == DISP_STATE_YEAR) {
+                  display_state = DISP_STATE_TIME;
+                  start_millis = millis();
+              }
+              break;
+
+          case IR_VOLUP:
+              options.neo_brightness = min(255, options.neo_brightness + 1);
+              neo_set_color();
+              break;
+          case IR_VOLDOWN:
+              options.neo_brightness = max(0, options.neo_brightness - 1);
+              neo_set_color();
+              break;
+      }
+      EEPROM.put(0, options);
   }
 
   delay(1);
