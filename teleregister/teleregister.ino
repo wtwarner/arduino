@@ -19,11 +19,9 @@ const int MIN_DELAY = 120;
 const byte tr_blank_pin[] = {2, 11, 9, 7};
 const byte tr_nonblank_pin[] = {12, 10, 8, 4};
 const byte status_pin[] = {17, 16, 15, 14};
-const byte neo_pin = 20;
-//#define IRMP_INPUT_PIN 21 in ir.ino
+const byte neo_pin = 13;
+//#define IRMP_INPUT_PIN 3 in ir.ino
 const byte colon_led_pins[2] = { 5, 6 };
-
-byte builtin_led_state = 0;
 
 Timer<> timer;
 
@@ -320,7 +318,6 @@ void setup() {
       tr_digits[i].begin(tr_nonblank_pin[i], tr_blank_pin[i], status_pin[i], i);
   }
   
-  pinMode(LED_BUILTIN, OUTPUT);
   for (int i = 0; i < 2; i ++) {
       pinMode(colon_led_pins[i], OUTPUT);
   }
@@ -329,16 +326,8 @@ void setup() {
   }
   //ds3231_set(myTZ.toUTC(datetime_compile())); // initialize 1st time
 
-  timer.every(250, toggle_builtin_led);
   timer.every(500, toggle_colon_led);
   timer.every(200, check_time);
-}
-
-bool toggle_builtin_led(void *) {
-  digitalWrite(LED_BUILTIN, builtin_led_state);
-  builtin_led_state = 1 - builtin_led_state;
-
-  return true;
 }
 
 bool toggle_colon_led(void *) {

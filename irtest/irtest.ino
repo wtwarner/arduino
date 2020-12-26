@@ -23,7 +23,7 @@
 
 #include <Arduino.h>
 
-#define IRMP_INPUT_PIN   21
+#define IRMP_INPUT_PIN   3
 #define IRMP_SUPPORT_NEC_PROTOCOL 1
 
 /*

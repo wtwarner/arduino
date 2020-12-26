@@ -1,7 +1,7 @@
 #include "ir.h"
 
 #define IRMP_SUPPORT_NEC_PROTOCOL 1
-#define IRMP_INPUT_PIN 21
+#define IRMP_INPUT_PIN 3
 #include <irmp.c.h>
 
 IRMP_DATA irmp_data;
