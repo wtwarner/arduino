@@ -130,15 +130,8 @@ public:
         if (act_state == ACT_IDLE) {
 	  if (unknown || digit != target_) {
             target_digit = target_;
-            if (tr_num_asserted() < TR_MAX_ASSERTED) {
-                act_state = ACT_ASSERTED;
-                actuate(1);
-                Log.trace("%d: start, to ASSERT\n", name);
-            }
-            else {
-                act_state = ACT_WAIT_ASSERT;
-                Log.trace("%d: start, wait to ASSERT\n", name);
-            }
+            act_state = ACT_WAIT_ASSERT;
+            Log.trace("%d: start, wait to ASSERT\n", name);
             return true;
 	  }
 	}
@@ -189,9 +182,8 @@ public:
                         Log.trace("%d: done, to IDLE\n", name);
                     }
                     else {
-                        act_state = ACT_ASSERTED;
-                        actuate(1);
-                        Log.trace("%d: not done, target %d, back to ASSERT\n", name, digit_to_num[target_digit]);
+                        act_state = ACT_WAIT_ASSERT;
+                        Log.trace("%d: not done, target %d, back to wait ASSERT\n", name, digit_to_num[target_digit]);
                     }
                 }
                 break;
