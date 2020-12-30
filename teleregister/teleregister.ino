@@ -90,6 +90,9 @@ static unsigned long start_millis = 0;
 static const byte NUM_NEOPIXELS = 4;
 Adafruit_NeoPixel neo_strip(NUM_NEOPIXELS, neo_pin, NEO_GRB + NEO_KHZ800);
 
+static const byte TR_MAX_ASSERTED = 1;
+byte tr_num_asserted();
+
 class tr_digit_t {
 public:
     tr_digit_t():
@@ -127,9 +130,15 @@ public:
         if (act_state == ACT_IDLE) {
 	  if (unknown || digit != target_) {
             target_digit = target_;
-            act_state = ACT_ASSERTED;
-            actuate(1);
-            Log.trace("%d: start, to ASSERT\n", name);
+            if (tr_num_asserted() < TR_MAX_ASSERTED) {
+                act_state = ACT_ASSERTED;
+                actuate(1);
+                Log.trace("%d: start, to ASSERT\n", name);
+            }
+            else {
+                act_state = ACT_WAIT_ASSERT;
+                Log.trace("%d: start, wait to ASSERT\n", name);
+            }
             return true;
 	  }
 	}
@@ -138,6 +147,10 @@ public:
     bool is_idle() {
         return act_state == ACT_IDLE;
     }
+    bool is_asserted() {
+        return act_state == ACT_ASSERTED;
+    }
+    
     // returns false if busy
     bool loop() {
         unsigned long now_millis = millis();
@@ -151,6 +164,13 @@ public:
         switch (act_state) {
             case ACT_IDLE:
                 return true;
+            case ACT_WAIT_ASSERT:
+                if (tr_num_asserted() < TR_MAX_ASSERTED) {
+                    act_state = ACT_ASSERTED;
+                    actuate(1);
+                    Log.trace("%d: done wait; to ASSERT\n", name);
+                }
+                break;
             case ACT_ASSERTED:
                 if (timeout) {
                     act_state = ACT_DEASSERTED;
@@ -186,7 +206,7 @@ private:
     byte tr_blank_pin;    // pin to actuate when on blank position
     byte status_pin;      // pin to query whether on blank position
     enum actuate_state_t {
-        ACT_IDLE, ACT_ASSERTED, ACT_DEASSERTED
+        ACT_IDLE, ACT_WAIT_ASSERT, ACT_ASSERTED, ACT_DEASSERTED
     };
     actuate_state_t act_state;
     unsigned long deadline_millis;
@@ -225,6 +245,14 @@ const tr_digit_t::digit_t tr_digit_t::num_to_digit[10] = {DIG_0, DIG_1, DIG_2, D
 
 tr_digit_t tr_digits[NUM_TR_DIGITS];
 
+byte tr_num_asserted() {
+    byte num = 0;
+    for (int i = 0; i < NUM_TR_DIGITS; i++) {
+        num += tr_digits[i].is_asserted();
+    }
+    return num;
+}
+
 bool check_time(void *) {
 
     time_state.set_utc(ds3231_get_unixtime());
@@ -240,22 +268,20 @@ void update_tr_unset() {
 }
 
 void update_tr_time() {
-    tr_digit_t::digit_t digs[NUM_TR_DIGITS];
+    tr_digit_t::digit_t digs[6]; // HHMMSS
     printDateTime(time_state.local, tcr->abbrev);
     const byte hour12or24 = options.twentyfour_hour ? hour(time_state.local) : hourFormat12(time_state.local);
     const byte hour10 = hour12or24 / 10;
     //const byte pm = options.twentyfour_hour ? 0 : isPM(time_state.local);
-    digs[3] = (hour10 > 0) ? tr_digit_t::num_to_digit[hour10] : tr_digit_t::DIG_BLANK;  // blank leading 0
-    digs[2] = tr_digit_t::num_to_digit[hour12or24 % 10];
-    if (options.show_seconds) {
-        digs[1] = tr_digit_t::num_to_digit[second(time_state.local) / 10];
-        digs[0] = tr_digit_t::num_to_digit[second(time_state.local) % 10];
-    } else {
-        digs[1] = tr_digit_t::num_to_digit[minute(time_state.local) / 10];
-        digs[0] = tr_digit_t::num_to_digit[minute(time_state.local) % 10];
-    }
+    digs[5] = (hour10 > 0) ? tr_digit_t::num_to_digit[hour10] : tr_digit_t::DIG_BLANK;  // blank leading 0
+    digs[4] = tr_digit_t::num_to_digit[hour12or24 % 10];
+    digs[3] = tr_digit_t::num_to_digit[minute(time_state.local) / 10];
+    digs[2] = tr_digit_t::num_to_digit[minute(time_state.local) % 10];
+    digs[1] = tr_digit_t::num_to_digit[second(time_state.local) / 10];
+    digs[0] = tr_digit_t::num_to_digit[second(time_state.local) % 10];
+
     for (int i = 0; i < NUM_TR_DIGITS; i++) {
-        tr_digits[i].set(digs[i]);
+        tr_digits[i].set(digs[i + options.show_seconds ? 2 : 0]);
     }
     // FIXME set AM/PM?
 }
