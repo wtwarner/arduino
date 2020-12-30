@@ -131,7 +131,8 @@ public:
 	  if (unknown || digit != target_) {
             target_digit = target_;
             act_state = ACT_WAIT_ASSERT;
-            Log.trace("%d: start, wait to ASSERT\n", name);
+            Log.trace("%d: start, on %d, target %d, wait to ASSERT\n", name,
+		      digit_to_num[digit], digit_to_num[target_digit]);
             return true;
 	  }
 	}
@@ -273,7 +274,7 @@ void update_tr_time() {
     digs[0] = tr_digit_t::num_to_digit[second(time_state.local) % 10];
 
     for (int i = 0; i < NUM_TR_DIGITS; i++) {
-        tr_digits[i].set(digs[i + options.show_seconds ? 2 : 0]);
+      tr_digits[i].set(digs[i + (options.show_seconds ? 0 : 2)]);
     }
     // FIXME set AM/PM?
 }
