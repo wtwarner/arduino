@@ -1,5 +1,5 @@
 /*
-  Nixie:
+  Nixie.  For Arduino Nano 33 IoT.
 
   3 shift registers
      0..3:
@@ -10,10 +10,6 @@
      20..23   Nixie 2
   */
 
-/*
- Decimal points:
-  x 0 1 x
-  */
 #include <TimeLib.h>
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
@@ -30,7 +26,7 @@ const int dataPin = 20;
 const int dimPin = 16; // pwm nixie
 const int clockSqwPin = 21;
 const int neonPins[] = {2, 3};
-const int nixie_dec_pins[] = {10, 11, 12, 9};
+const int nixie_dec_pins[] = {10, 11, 12, 9}; // nixie decimal point pins
 
 const int NUM_LEDS = 24;
 
@@ -54,9 +50,11 @@ public:
         show_seconds = false;
         neon_gamma = true;
         neon_start = 254;
+        neon_off = 1;
         neon_steps = 100;
         neon_stepsize = 1;
         neon_timestep = 10;
+        neon_mode = 0;
 
         antipoison_hour = 5;
         antipoison_min = 13;
@@ -67,9 +65,11 @@ public:
   bool show_seconds;
   bool neon_gamma;
   byte neon_start;
+  byte neon_off;
   byte neon_steps;
   byte neon_stepsize;
   byte neon_timestep;
+  byte neon_mode;
 
   byte antipoison_hour;
   byte antipoison_min;
@@ -117,9 +117,9 @@ struct neon_state_t {
     cnt = options.neon_steps;
   }
   void toggle() {
-    cnt = options.neon_steps;
-    x = options.neon_start;
     flop = 1 - flop;
+    x = options.neon_start;
+    cnt = options.neon_steps;
   }
 
   byte x;
@@ -298,16 +298,34 @@ void update_nixie_antipoison() {
 bool toggle_neon(void *) {
 
   byte g = options.neon_gamma ? gamma8(neon_state.x) : neon_state.x;
-
-  analogWrite(neonPins[0], neon_state.flop ? g : 1);
-  analogWrite(neonPins[1], neon_state.flop ? 1 : g);
-
-  if (--neon_state.cnt == 0) {
-    // hold state
-    neon_state.cnt = 1;
-  } else
-    neon_state.x -= 1;
-
+  bool count = true;
+  switch (options.neon_mode) {
+      case 0:
+          analogWrite(neonPins[0], neon_state.flop ? g : options.neon_off);
+          analogWrite(neonPins[1], neon_state.flop ? options.neon_off : g);
+          break;
+      case 1:
+          analogWrite(neonPins[0], g);
+          analogWrite(neonPins[1], g);
+          count = false;
+          break;
+      case 2:
+          analogWrite(neonPins[0], neon_state.flop ? g : options.neon_off);
+          analogWrite(neonPins[1], neon_state.flop ? g : options.neon_off);
+          break;
+      default:
+          analogWrite(neonPins[0], options.neon_off);
+          analogWrite(neonPins[1], options.neon_off);
+          count = false;
+          break;
+  }
+  if (count) {
+      if (--neon_state.cnt == 0) {
+          // hold state
+          neon_state.cnt = 1;
+      } else
+          neon_state.x -= options.neon_stepsize;
+  }
   return true;
 }
 
@@ -466,6 +484,8 @@ void cmd_parse(String &bt_cmd) {
       if (pch != 0) { options.neon_steps = atoi(pch); pch = strtok(0, " "); }
       if (pch != 0) { options.neon_stepsize = atoi(pch); pch = strtok(0, " "); }
       if (pch != 0) { options.neon_timestep = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_off = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { options.neon_mode = atoi(pch); pch = strtok(0, " "); }
 
       timer.cancel(neon_state.timer_handle);
       neon_state.timer_handle = timer.every(options.neon_timestep, toggle_neon);
