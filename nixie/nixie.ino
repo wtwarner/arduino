@@ -45,16 +45,16 @@ public:
         to_defaults();
     }
     void to_defaults() {
-        nixie_brightness = 255;
+        nixie_brightness = 192;
         twentyfour_hour = false;
         show_seconds = false;
         neon_gamma = true;
-        neon_start = 254;
+        neon_start = 192;
         neon_off = 1;
         neon_steps = 100;
         neon_stepsize = 1;
         neon_timestep = 10;
-        neon_mode = 0;
+        neon_mode = 1;
 
         antipoison_hour = 5;
         antipoison_min = 13;
@@ -442,6 +442,10 @@ void cmd_parse(String &bt_cmd) {
   if (bt_cmd.startsWith("B:")) {
     options.nixie_brightness = v;
     set_nixie_brightness();
+  } else if (bt_cmd.startsWith("NB:")) {
+    options.neon_start = v;
+  } else if (bt_cmd.startsWith("NM:")) {
+    options.neon_mode = v;
   } else if (bt_cmd.startsWith("24:")) {
     options.twentyfour_hour = v;
   } else if (bt_cmd.startsWith("SS:")) {
