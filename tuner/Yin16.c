@@ -16,7 +16,7 @@
 void Yin_difference(Yin16 *yin, int16_t* buffer){
   int16_t i;
   int16_t tau;
-  float delta;
+  //float delta;
 
   /* Calculate the difference for difference shift values (tau) for the half of the samples */
   for(tau = 0 ; tau < yin->halfBufferSize; tau++){
@@ -24,8 +24,9 @@ void Yin_difference(Yin16 *yin, int16_t* buffer){
     /* Take the difference of the signal with a shifted version of itself, then square it.
      * (This is the Yin algorithm's tweak on autocorellation) */ 
     for(i = 0; i < yin->halfBufferSize; i++){
-      delta = buffer[i] - buffer[i + tau];
-      yin->yinBuffer[tau] += delta * delta;
+      int16_t delta = buffer[i] - buffer[i + tau];
+      long sq = (long)delta * (long)delta;
+      yin->yinBuffer[tau] += (float)sq;
     }
   }
 }

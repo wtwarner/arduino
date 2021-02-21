@@ -39,7 +39,7 @@ void setup() {
   digitalWriteFast(LED_BUILTIN, 1);
 
   Yin_init(&yin16, 128 * NUM_BUFFERS / DECIMATE_FACTOR, 0.05, AUDIO_SAMPLE_RATE_EXACT / DECIMATE_FACTOR);
-  biquad1.setLowpass(0, 20000/DECIMATE_FACTOR, 2);
+  biquad1.setLowpass(0, 20000/DECIMATE_FACTOR, .7);
   queue1.begin();
 }
 
@@ -86,7 +86,7 @@ float autocor(int16_t *rawData, int len) {
 }
 
 int16_t mem[128 * NUM_BUFFERS / DECIMATE_FACTOR];
-//float mem_fp[128 * NUM_BUFFERS / DECIMATE_FACTOR];
+float mem_fp[128 * NUM_BUFFERS / DECIMATE_FACTOR];
 
 #if 0
 void loop()
@@ -111,14 +111,14 @@ void loop() {
     //memcpy(mem + b * 128, bfr, 128 * sizeof(int16_t));
     for (int s=0; s<128;  s += DECIMATE_FACTOR, bfr += DECIMATE_FACTOR) {
       mem[(b*128 + s) / DECIMATE_FACTOR] = *bfr;
-      //mem_fp[(b*128 +s ) / DECIMATE_FACTOR] = *bfr / 32768.0;
+      mem_fp[(b*128 +s ) / DECIMATE_FACTOR] = *bfr / 32768.0;
     }
     queue1.freeBuffer();
   }
   queue1.end();
   
  Serial.println("");
-#if 1
+#if 0
   long start = millis();
   float f = autocor(mem, 128 * NUM_BUFFERS / DECIMATE_FACTOR);
   long duration = millis() - start;
@@ -133,10 +133,10 @@ void loop() {
   Serial.printf("YIN Note %3.2f, prob %2f (time %ld)\n", yin_f, yin_prob, duration);
  #endif
  #if 1
- start = millis();
+ long start = millis();
   float yin16_freq = Yin_getPitch(&yin16, mem);  
   float yin16_prob = Yin_getProbability(&yin16);
-  duration = millis()  - start;
+  long duration = millis()  - start;
   Serial.printf("YIN16 Note %3.2f, prob %2f (time %ld)\n", yin16_freq, yin16_prob, duration);
 #endif
 
