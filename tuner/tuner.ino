@@ -7,6 +7,8 @@
 #include "Yin16.h"
 #include <AudioTuner.h>
 
+extern float find_note(float freq, const char * &name, int &octave);
+
 const int DECIMATE_FACTOR = 4;
 const int NUM_BUFFERS = 18;
 
@@ -104,7 +106,11 @@ void loop()
 {
     while (!notefreq1.available())
         ;
-    Serial.printf("NF %03.2f\n", notefreq1.read(), notefreq1.probability());
+    float freq = notefreq1.read();
+    const char *note_name;
+    int octave;
+    float err = find_note(freq, note_name, octave);
+    Serial.printf("NF %03.2f (%s %d, %1.2f % err)\n", freq, note_name, octave, notefreq1.probability(), err);
 }
 #endif  
 void loop1() {
