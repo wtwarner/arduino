@@ -18,7 +18,7 @@ AudioTuner               notefreq1;
 AudioRecordQueue         queue1;         //xy=332,215
 //AudioConnection          patchCord1(adc1, notefreq1);
 AudioConnection          patchCord3(adc1, biquad1);
-AudioConnection          patchCord2(biquad1, queue1);
+//AudioConnection          patchCord2(biquad1, queue1);
 AudioConnection           patchCord4(biquad1, notefreq1);
 // GUItool: end automatically generated code
 
@@ -51,7 +51,7 @@ void setup() {
 
   Yin_init(&yin16, 128 * NUM_BUFFERS / DECIMATE_FACTOR, 0.05, AUDIO_SAMPLE_RATE_EXACT / DECIMATE_FACTOR);
   biquad1.setLowpass(0, 20000/DECIMATE_FACTOR, .7);
-  queue1.begin();
+ // queue1.begin();
 }
 
 float autocor(int16_t *rawData, int len) {
