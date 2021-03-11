@@ -38,19 +38,14 @@ float find_note(float freq, const char *&name, int &octave)
     if (iter != note_freq.end() && iter != note_freq.begin()) {
         const size_t high_i = iter - note_freq.begin();
         const size_t low_i = high_i - 1;
-        float error;
-        size_t match_i;
-        if (fabs(freq - note_freq[high_i]) < fabs(freq - note_freq[low_i])) {
-            match_i = high_i;
-            error = (freq - note_freq[high_i]) / note_freq[high_i];
-        }
-        else {
-            match_i = low_i;
-            error = (freq - note_freq[low_i]) / note_freq[low_i];
-        }
+        const size_t match_i =  (fabs(freq - note_freq[high_i]) < fabs(freq - note_freq[low_i]))
+            ? high_i
+            : low_i;
+
+        const float nearest = note_freq[match_i];
         name = note_names[match_i % NOTE_PER_OCTAVE];
         octave = match_i / NOTE_PER_OCTAVE;
-        return error * 100.0;   // percentage
+        return nearest;
     }
     // not found
     name = "?";

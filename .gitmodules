@@ -7,3 +7,6 @@
 [submodule "libraries/AudioTuner"]
 	path = libraries/AudioTuner
 	url = https://github.com/duff2013/AudioTuner.git
+[submodule "libraries/Audio"]
+	path = libraries/Audio
+	url = https://github.com/PaulStoffregen/Audio.git
