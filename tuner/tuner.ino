@@ -2,29 +2,34 @@
 
 #include <Audio.h>
 #include <Wire.h>
-#include "global.h"
-#include "Yin.h"
-#include "Yin16.h"
 #include <AudioTuner.h>
-
+#include "global.h"
+#include "Yin16.h"
 
 const int DAC_CLK = 10;
 const int DAC_DATA = 11;
 const int DAC_LOAD = 12;
 const int AUDIO_IN_PIN = A1;
 
+const int VFD_PIN_CLK = 10; // shared with DAC
+const int VFD_PIN_STROBE = 8;
+const int VFD_PIN_DATA = 11; // shared with DAC
+const int VFD_PIN_BLANK = 9;
+
 const int DAC_IN9_LEFT = 1;
 const int DAC_IN9_RIGHT = 0;
+const int MAX_VAL = 250;
+const int MIN_VAL = 20;
 
 #define USE_NOTEFREQ 1
 #define USE_YIN 1
 
-#if 1
-  #define MON if (1)
-  #define PLOT if (0)
+#if 0
+#define MON if (1)
+#define PLOT if (0)
 #else
-  #define MON if (0)
-  #define PLOT if (1)
+#define MON if (0)
+#define PLOT if (1)
 #endif
 
 extern float find_note(float freq, const char * &name, int &octave);
@@ -49,7 +54,6 @@ AudioConnection          patchCord5(adc1, rms1);
 
 // GUItool: end automatically generated code
 #if USE_YIN
-Yin yin(AUDIO_SAMPLE_RATE_EXACT / (float)DECIMATE_FACTOR, 128 * NUM_BUFFERS / DECIMATE_FACTOR);
 Yin16 yin16;
 #endif
 
@@ -61,6 +65,7 @@ int16_t fir_11029_HZ_coefficients[22] =
   5011, -6, -1202, -15, 352, 21,
   -71, -11, 6, 3
 };
+
 
 const int NUM_HIST = 5;
 float freq_hist[NUM_HIST];
@@ -82,6 +87,7 @@ float update_freq_hist(float f, float w)
   return freq_sum / weight_sum;
 }
 
+
 void setup() {
 
   AudioMemory(30);
@@ -98,6 +104,7 @@ void setup() {
   digitalWrite(DAC_CLK, LOW);
   digitalWrite(DAC_DATA, HIGH);
   digitalWrite(DAC_LOAD, HIGH);
+  vfd_setup();
 
   biquad1.setLowpass(0, 20000 / DECIMATE_FACTOR, .7);
 
@@ -110,55 +117,7 @@ void setup() {
 #endif
 }
 
-float autocor(int16_t *rawData, int len) {
 
-  int thresh = 0;
-  long sum = 0;
-
-  byte pd_state = 0;
-  int period = 0;
-  const int OFFSET = 0;
-  const int SCALE = 65536;
-  for (int i = 0; i < len; i++)
-  {
-    // Autocorrelation
-    long sum_old = sum;
-    sum = 0;
-    for (int k = 0; k < len - i; k++) sum += (rawData[k] - OFFSET) * (rawData[k + i] - OFFSET) / SCALE;
-    // RX8 [h=43] @1Key1 @0Key1
-    //    Serial.print("C");
-    //    Serial.write((rawData[i]-128)>>8);
-    //    Serial.write((rawData[i]-128)&0xff);
-    //
-    //    // RX8 [h=43] @1Key1 @0Key1
-    //    Serial.print("C");
-    //    Serial.write(sum>>8);
-    //    Serial.write(sum&0xff);
-    //
-    // Peak Detect State Machine
-    if (pd_state == 2 && (sum - sum_old) <= 0)
-    {
-      period = i;
-      pd_state = 3;
-    }
-    if (pd_state == 1 && (sum > thresh) && (sum - sum_old) > 0) pd_state = 2;
-    if (!i) {
-      thresh = sum * 0.5;
-      pd_state = 1;
-    }
-  }
-  // Frequency identified in kHz
-  return (float)AUDIO_SAMPLE_RATE_EXACT / DECIMATE_FACTOR / period;
-
-}
-
-// DAC
-int MAX_VAL = 250;
-int MIN_VAL = 20;
-
-
-int16_t mem[128 * NUM_BUFFERS / DECIMATE_FACTOR];
-float mem_fp[128 * NUM_BUFFERS / DECIMATE_FACTOR];
 
 #if USE_NOTEFREQ
 bool do_nf(float &freq, float &filt_freq)
@@ -167,15 +126,14 @@ bool do_nf(float &freq, float &filt_freq)
 
     freq = notefreq1.read();
     const float prob = notefreq1.probability();
-//    MON Serial.printf("NF %03.2f, %2.1f prob\n", 
-//       freq, prob);
+    //    MON Serial.printf("NF %03.2f, %2.1f prob\n",
+    //       freq, prob);
 
     if (prob > 0.98) {
       filt_freq = update_freq_hist(freq, prob);
-
       return true;
     }
-    
+
   }
 
   return false;
@@ -186,7 +144,7 @@ bool do_nf(float &freq, float &filt_freq)
 
 void dac_write(byte which, byte value)
 {
- 
+
   byte range = 0;
   uint16_t v16 = (which << 9) | (range << 8) | value;
 
@@ -241,61 +199,76 @@ void animate() {
 long last_valid = 0;
 void loop()
 {
- 
+
   bool nf_valid = false;
   float nf_freq, nf_filt_freq;
-#if USE_NOTEFREQ
-  nf_valid = do_nf(nf_freq, nf_filt_freq);
-#endif
   bool yin_valid = false;
   float yin_freq, yin_filt_freq;
-  float rms = rms1.available()  ? rms1.read() : 0.0;
+
+  const float rms = rms1.available()  ? rms1.read() : 0.0;
+
+#if USE_NOTEFREQ
+  nf_valid = rms >= 0.06 && do_nf(nf_freq, nf_filt_freq);
+#endif
+
+  // Yin algorithm is better, but slower.  NF algorithm is faster.
+  // Use Yin when last result is old, or low signal (rms).
 #if USE_YIN
-  yin_valid = ((!nf_valid && ((millis() - last_valid) > 1)) || rms < 0.06) && do_yin(yin_freq, yin_filt_freq);
+  yin_valid = ((!nf_valid && ((millis() - last_valid) > 10)) || rms < 0.06) && do_yin(yin_freq, yin_filt_freq);
 #endif
   if (nf_valid || yin_valid) {
-      //dac_write(0); delay(1);
 
-      float filt_freq = yin_valid ? yin_filt_freq : nf_filt_freq;
-      const char *note_name;
-      int octave;
-      const float nearest = find_note(filt_freq, note_name, octave);
-      // cent = 1200 * ln(f1/f2) / ln(2) == 1200 * log2(f1/f2)
-      float cent = 1200.0 * log2(filt_freq / nearest);
+    float filt_freq = yin_valid ? yin_filt_freq : nf_filt_freq;
+    
+    const char *note_name;
+    int octave;
+    const float nearest = find_note(filt_freq, note_name, octave);
+    // cent = 1200 * ln(f1/f2) / ln(2) == 1200 * log2(f1/f2)
+    float cent = 1200.0 * log2(filt_freq / nearest);
+    //MON Serial.printf("Note: %s\n", note_name);
+    vfd_write_note(note_name);
+    dac_write(DAC_IN9_LEFT, map(min((int)(cent + 0.5), 0), -50, 0, MAX_VAL, MIN_VAL));
+    dac_write(DAC_IN9_RIGHT, map(max((int)(cent + 0.5), 0), 0, 50, MIN_VAL, MAX_VAL));
+    
+    static float last_nf; 
+    static float last_yin; 
+    PLOT Serial.printf("%f, %f %f\n",
+      filt_freq, yin_valid ? yin_freq : last_yin, nf_valid ? nf_freq : last_nf);
+      if (nf_valid) last_nf = nf_freq;
+      if (yin_valid) last_yin = yin_freq;
+    //      MON Serial.printf("yin %3.1f, nf %3.1f, rms %.3f\n", yin_valid ? yin_freq : 0.0, nf_valid ? nf_freq : 0.0, rms);
+    digitalWriteFast(LED_BUILTIN, !digitalReadFast(LED_BUILTIN));
 
-      dac_write(DAC_IN9_LEFT, map(min((int)(cent + 0.5), 0), -50, 0, MAX_VAL, MIN_VAL));
-      dac_write(DAC_IN9_RIGHT, map(max((int)(cent + 0.5), 0), 0, 50, MIN_VAL, MAX_VAL));
-//      PLOT Serial.printf("%f %f %f\n", 
-//        filt_freq, yin_valid ? yin_freq : 0, nf_valid ? nf_freq : 0);
-//      MON Serial.printf("yin %3.1f, nf %3.1f, rms %.3f\n", yin_valid ? yin_freq : 0.0, nf_valid ? nf_freq : 0.0, rms);
-     digitalWriteFast(LED_BUILTIN, !digitalReadFast(LED_BUILTIN));
-
-     last_valid = millis();
+    if (yin_valid) last_valid = millis();
   }
-  
+
+
 }
 
 #if USE_YIN
-long ts = 0;
+static int16_t mem[128 * NUM_BUFFERS / DECIMATE_FACTOR];
 static int buf_idx = 0;
-bool do_yin(float &freq, float &filt_freq) {
-  long start, duration;
 
+bool do_yin(float &freq, float &filt_freq) {
+
+  // discard oldest unneeded buffers
   while (queue1.available() > NUM_BUFFERS) {
     queue1.readBuffer();
     queue1.freeBuffer();
   }
+  // retrieve and store buffer
   if (queue1.available()) {
     int16_t *bfr = queue1.readBuffer();
 
     for (int s = 0; s < 128;  s += DECIMATE_FACTOR, bfr += DECIMATE_FACTOR) {
       //Serial.printf("%d\n", *bfr);
       mem[(buf_idx * 128 + s) / DECIMATE_FACTOR] = *bfr;
-      mem_fp[(buf_idx * 128 + s ) / DECIMATE_FACTOR] = *bfr / 32768.0;
+
     }
     queue1.freeBuffer();
     ++ buf_idx;
   }
+  // when accumulate enough, continue processing below
   if (buf_idx == NUM_BUFFERS) {
     buf_idx = 0;
     // continue below
@@ -305,31 +278,12 @@ bool do_yin(float &freq, float &filt_freq) {
   }
 
 
-  {
-    //start = millis();
-    float yin16_freq = Yin_getPitch(&yin16, mem);
-    float yin16_prob = Yin_getProbability(&yin16);
+  freq = Yin_getPitch(&yin16, mem);
+  float prob = Yin_getProbability(&yin16);
 
-    //duration = millis()  - start;
-    if (yin16_prob >= .95) {
-      filt_freq = update_freq_hist(yin16_freq, yin16_prob * 3.0);
-
-      const char *note_name;
-      int octave;
-      const float nearest = find_note(filt_freq, note_name, octave);
-      float cent = 1200.0 * log2(yin16_freq / nearest);
-
-      //MON Serial.printf("YIN16 Note %3.1f %3.2f (%s %d, % 2.1f cent err), prob %2f\n", 
-      //   yin16_freq, filt_freq, note_name, octave, cent, yin16_prob);
-      //ts = millis();
-      freq = yin16_freq;
-      
-      return true;
-    }
-    else {
-       update_freq_hist(yin16_freq, 0);
-    }
-   
+  if (prob >= .95) {
+    filt_freq = update_freq_hist(freq, prob * 3.0);
+    return true;
   }
 
   return false;
