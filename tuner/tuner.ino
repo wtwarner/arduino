@@ -5,26 +5,17 @@
 #include <AudioTuner.h>
 #include "global.h"
 #include "Yin16.h"
+#include "Vfd.h"
 
-const int DAC_CLK = 10;
-const int DAC_DATA = 11;
-const int DAC_LOAD = 12;
 const int AUDIO_IN_PIN = A1;
-
-const int VFD_PIN_CLK = 10; // shared with DAC
-const int VFD_PIN_STROBE = 8;
-const int VFD_PIN_DATA = 11; // shared with DAC
-const int VFD_PIN_BLANK = 9;
 
 const int DAC_IN9_LEFT = 1;
 const int DAC_IN9_RIGHT = 0;
-const int MAX_VAL = 250;
-const int MIN_VAL = 20;
 
 #define USE_NOTEFREQ 1
 #define USE_YIN 1
 
-#if 0
+#if 1
 #define MON if (1)
 #define PLOT if (0)
 #else
@@ -37,8 +28,7 @@ extern float find_note(float freq, const char * &name, int &octave);
 const int DECIMATE_FACTOR = 4;
 const int NUM_BUFFERS = 18;
 
-// GUItool: begin automatically generated code
-AudioInputAnalog         adc1(AUDIO_IN_PIN);           //xy=153,113
+AudioInputAnalog         adc1(AUDIO_IN_PIN);
 AudioFilterBiquad        biquad1;
 #if USE_NOTEFREQ
 AudioTuner               notefreq1;
@@ -46,16 +36,97 @@ AudioConnection          patchCord4(adc1, notefreq1);
 #endif
 #if USE_YIN
 AudioConnection          patchCord3(adc1, biquad1);
-AudioRecordQueue         queue1;         //xy=332,215
+AudioRecordQueue         queue1;
 AudioConnection          patchCord2(biquad1, queue1);
 #endif
 AudioAnalyzeRMS          rms1;
 AudioConnection          patchCord5(adc1, rms1);
 
-// GUItool: end automatically generated code
 #if USE_YIN
 Yin16 yin16;
 #endif
+
+struct In9 {
+    static const int MAX_VAL = 250;
+    static const int MIN_VAL = 20;
+    
+    In9(byte which_dac_):
+        which_dac(which_dac_),
+        dac_value(0),
+        state(ST_BLANK),
+        deadline(0),
+        last_blank_time(0)
+    {}
+
+    void setup() {
+        blank();
+    }
+    void blank() {
+        state = ST_BLANK;
+        last_blank_time = millis();
+        deadline = last_blank_time + 2;
+        dac_write(which_dac, 0);
+    }
+    
+    void update(byte new_dac_value) {
+        switch (state) {
+            case ST_BLANK:
+                dac_value = new_dac_value;
+                if (millis() >= deadline) {
+                    dac_write(which_dac, dac_value);
+                }
+                break;
+            case ST_DISPLAY:
+                if (dac_value != new_dac_value) {
+                    if (abs(dac_value - new_dac_value) > Threshold) {
+                        blank();
+                    }
+                    else {
+                        dac_write(which_dac, dac_value);
+                    }
+                    dac_value = new_dac_value;
+                }
+                if (millis() - last_blank_time > 250) {
+                    blank();
+                }
+                break;
+        }
+    }
+
+    void loop() {
+        update(dac_value);
+    }
+
+    void dac_write(byte which, byte value)
+    {
+        const byte range = 0;
+        const uint16_t v16 = (which << 9) | (range << 8) | value;
+        
+        for (byte b = 0; b < 16; b ++) {
+            digitalWrite(DAC_CLK, HIGH);
+            digitalWrite(DAC_DATA, (v16 >> (15 - b)) & 1);
+            digitalWrite(DAC_CLK, LOW);
+        }
+        digitalWrite(DAC_LOAD, LOW);
+        delayMicroseconds(1); // 250 ns min pulse
+        digitalWrite(DAC_LOAD, HIGH);
+    }
+
+
+    const byte which_dac;
+    byte dac_value;
+    enum st_t { ST_BLANK, ST_DISPLAY };
+    st_t state;
+    unsigned long deadline;
+    unsigned long last_blank_time;
+    const byte Threshold = 4;
+    
+};
+
+In9 in9_left(DAC_IN9_LEFT);
+In9 in9_right(DAC_IN9_RIGHT);
+
+Vfd vfd;
 
 // For AudioTuner, use decimation_Factor 4
 int16_t fir_11029_HZ_coefficients[22] =
@@ -104,7 +175,9 @@ void setup() {
   digitalWrite(DAC_CLK, LOW);
   digitalWrite(DAC_DATA, HIGH);
   digitalWrite(DAC_LOAD, HIGH);
-  vfd_setup();
+  vfd.setup();
+  in9_left.setup();
+  in9_right.setup();
 
   biquad1.setLowpass(0, 20000 / DECIMATE_FACTOR, .7);
 
@@ -140,52 +213,6 @@ bool do_nf(float &freq, float &filt_freq)
 }
 #endif
 
-
-
-void dac_write(byte which, byte value)
-{
-
-  byte range = 0;
-  uint16_t v16 = (which << 9) | (range << 8) | value;
-
-  for (byte b = 0; b < 16; b ++) {
-    digitalWrite(DAC_CLK, HIGH);
-    digitalWrite(DAC_DATA, (v16 >> (15 - b)) & 1);
-    //delayMicroseconds(1); // setup data to clk_
-    digitalWrite(DAC_CLK, LOW);
-  }
-  //delayMicroseconds(1); // setup clk_ to load
-  digitalWrite(DAC_LOAD, LOW);
-  delayMicroseconds(1); // 250 ns min pulse
-  digitalWrite(DAC_LOAD, HIGH);
-
-}
-
-int v = 100;
-int phase = 0;
-
-void animate() {
-  //delay(3);
-
-  if (phase && v-- < MIN_VAL) {
-    phase = 1 - phase;
-    v = 0;
-
-    dac_write(DAC_IN9_LEFT, v);
-    //delay(10);
-    v = MIN_VAL;
-  }
-  else if (!phase && v++ >= MAX_VAL) {
-    phase = 1 - phase;
-    v = 0;
-
-    dac_write(DAC_IN9_LEFT, v);
-    //delay(10);
-    v = MAX_VAL;
-  }
-
-  dac_write(DAC_IN9_LEFT, v);
-}
 
 // mVpp to rms (gain 2x)
 //   10: .000
@@ -226,9 +253,9 @@ void loop()
     // cent = 1200 * ln(f1/f2) / ln(2) == 1200 * log2(f1/f2)
     float cent = 1200.0 * log2(filt_freq / nearest);
     //MON Serial.printf("Note: %s\n", note_name);
-    vfd_write_note(note_name);
-    dac_write(DAC_IN9_LEFT, map(min((int)(cent + 0.5), 0), -50, 0, MAX_VAL, MIN_VAL));
-    dac_write(DAC_IN9_RIGHT, map(max((int)(cent + 0.5), 0), 0, 50, MIN_VAL, MAX_VAL));
+    vfd.write_note(note_name);
+    in9_left.update(map(min((int)(cent + 0.5), 0), -50, 0, In9::MAX_VAL, In9::MIN_VAL));
+    in9_right.update(map(max((int)(cent + 0.5), 0), 0, 50, In9::MIN_VAL, In9::MAX_VAL));
     
     static float last_nf; 
     static float last_yin; 
@@ -242,7 +269,9 @@ void loop()
     if (yin_valid) last_valid = millis();
   }
 
-
+  in9_left.loop();
+  in9_right.loop();
+  vfd.loop();
 }
 
 #if USE_YIN
