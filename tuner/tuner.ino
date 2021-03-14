@@ -47,80 +47,66 @@ Yin16 yin16;
 #endif
 
 struct In9 {
-    static const int MAX_VAL = 250;
-    static const int MIN_VAL = 20;
-    
-    In9(byte which_dac_):
-        which_dac(which_dac_),
-        dac_value(0),
-        state(ST_BLANK),
-        deadline(0),
-        last_blank_time(0)
-    {}
+  static const int MAX_VAL = 250;
+  static const int MIN_VAL = 20;
 
-    void setup() {
+  In9(byte which_dac_):
+    which_dac(which_dac_),
+    dac_value(0),
+    direction(0)
+  {}
+
+  void setup() {
+    dac_write(which_dac, 0);
+  }
+
+  void blank() {
+    dac_write(which_dac, 0);
+    delay(2);
+  }
+
+  void update(int new_dac_value) {
+
+    if (dac_value != new_dac_value) {
+      const byte new_direction = (new_dac_value > dac_value) ? 1 : 0;
+      if (abs(dac_value - new_dac_value) > Threshold ) {
+        MON Serial.printf("dac %d, blank\n", dac_value);
         blank();
-    }
-    void blank() {
-        state = ST_BLANK;
-        last_blank_time = millis();
-        deadline = last_blank_time + 2;
-        dac_write(which_dac, 0);
-    }
-    
-    void update(byte new_dac_value) {
-        switch (state) {
-            case ST_BLANK:
-                dac_value = new_dac_value;
-                if (millis() >= deadline) {
-                    dac_write(which_dac, dac_value);
-                }
-                break;
-            case ST_DISPLAY:
-                if (dac_value != new_dac_value) {
-                    if (abs(dac_value - new_dac_value) > Threshold) {
-                        blank();
-                    }
-                    else {
-                        dac_write(which_dac, dac_value);
-                    }
-                    dac_value = new_dac_value;
-                }
-                if (millis() - last_blank_time > 250) {
-                    blank();
-                }
-                break;
-        }
+      }
+
+      direction = new_direction;
+      dac_value = new_dac_value;
+      dac_write(which_dac, dac_value);
     }
 
-    void loop() {
-        update(dac_value);
+  }
+
+  void loop() {
+    update(dac_value);
+  }
+
+  void dac_write(byte which, int value)
+  {
+    const byte range = 0;
+    const uint16_t v16 = (which << 9) | (range << 8) | value;
+
+    for (byte b = 0; b < 16; b ++) {
+      digitalWrite(DAC_CLK, HIGH);
+      digitalWrite(DAC_DATA, (v16 >> (15 - b)) & 1);
+      digitalWrite(DAC_CLK, LOW);
     }
-
-    void dac_write(byte which, byte value)
-    {
-        const byte range = 0;
-        const uint16_t v16 = (which << 9) | (range << 8) | value;
-        
-        for (byte b = 0; b < 16; b ++) {
-            digitalWrite(DAC_CLK, HIGH);
-            digitalWrite(DAC_DATA, (v16 >> (15 - b)) & 1);
-            digitalWrite(DAC_CLK, LOW);
-        }
-        digitalWrite(DAC_LOAD, LOW);
-        delayMicroseconds(1); // 250 ns min pulse
-        digitalWrite(DAC_LOAD, HIGH);
-    }
+    digitalWrite(DAC_LOAD, LOW);
+    delayMicroseconds(1); // 250 ns min pulse
+    digitalWrite(DAC_LOAD, HIGH);
+  }
 
 
-    const byte which_dac;
-    byte dac_value;
-    enum st_t { ST_BLANK, ST_DISPLAY };
-    st_t state;
-    unsigned long deadline;
-    unsigned long last_blank_time;
-    const byte Threshold = 4;
-    
+  const byte which_dac;
+  int dac_value;
+
+  byte direction;
+  const byte Threshold = 0;
+
 };
 
 In9 in9_left(DAC_IN9_LEFT);
@@ -246,7 +232,7 @@ void loop()
   if (nf_valid || yin_valid) {
 
     float filt_freq = yin_valid ? yin_filt_freq : nf_filt_freq;
-    
+
     const char *note_name;
     int octave;
     const float nearest = find_note(filt_freq, note_name, octave);
@@ -256,13 +242,13 @@ void loop()
     vfd.write_note(note_name);
     in9_left.update(map(min((int)(cent + 0.5), 0), -50, 0, In9::MAX_VAL, In9::MIN_VAL));
     in9_right.update(map(max((int)(cent + 0.5), 0), 0, 50, In9::MIN_VAL, In9::MAX_VAL));
-    
-    static float last_nf; 
-    static float last_yin; 
+
+    static float last_nf;
+    static float last_yin;
     PLOT Serial.printf("%f, %f %f\n",
-      filt_freq, yin_valid ? yin_freq : last_yin, nf_valid ? nf_freq : last_nf);
-      if (nf_valid) last_nf = nf_freq;
-      if (yin_valid) last_yin = yin_freq;
+                       filt_freq, yin_valid ? yin_freq : last_yin, nf_valid ? nf_freq : last_nf);
+    if (nf_valid) last_nf = nf_freq;
+    if (yin_valid) last_yin = yin_freq;
     //      MON Serial.printf("yin %3.1f, nf %3.1f, rms %.3f\n", yin_valid ? yin_freq : 0.0, nf_valid ? nf_freq : 0.0, rms);
     digitalWriteFast(LED_BUILTIN, !digitalReadFast(LED_BUILTIN));
 

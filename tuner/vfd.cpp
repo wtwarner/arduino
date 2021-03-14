@@ -70,8 +70,8 @@ void Vfd::write_note(const char *note_name)
         deadline = millis() + 1000;
     }
     
-    //write_vfd(segment_left, segment_right);
-    write_vfd(segment_right, segment_left); // FIXME
+    write_vfd(segment_left, segment_right);
+    //write_vfd(segment_right, segment_left); 
 }
 
 
@@ -81,6 +81,3 @@ void Vfd::loop() {
         deadline = millis() + 1000;
     }
 }
-
-
-
