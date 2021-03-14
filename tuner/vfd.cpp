@@ -37,6 +37,9 @@ void Vfd::setup() {
 
 void Vfd::write_vfd(uint32_t vfd1, uint32_t vfd2)
 {
+    // vfd shares pins with in-9 so must exclude in-9 ISR
+    noInterrupts();
+
     for (int i = 0; i < 20; i ++) {
         digitalWrite(VFD_PIN_DATA, (vfd2 >> (19 - i) & 0x1));
         digitalWrite(VFD_PIN_CLK, 1);
@@ -49,6 +52,8 @@ void Vfd::write_vfd(uint32_t vfd1, uint32_t vfd2)
     }
     digitalWrite(VFD_PIN_STROBE, 1);
     digitalWrite(VFD_PIN_STROBE, 0);
+
+    interrupts();
 }
 
 void Vfd::write_note(const char *note_name)

@@ -49,10 +49,14 @@ Yin16 yin16;
 struct In9 {
   static const int MAX_VAL = 250;
   static const int MIN_VAL = 20;
-
+  enum St_t { ST_BLANK, ST_DISPLAY };
+    
   In9(byte which_dac_):
     which_dac(which_dac_),
     dac_value(0),
+    target_dac_value(0),
+    state(ST_BLANK),
+    blank_timer(2),
     direction(0)
   {}
 
@@ -60,29 +64,35 @@ struct In9 {
     dac_write(which_dac, 0);
   }
 
-  void blank() {
-    dac_write(which_dac, 0);
-    delay(2);
-  }
-
   void update(int new_dac_value) {
-
-    if (dac_value != new_dac_value) {
-      const byte new_direction = (new_dac_value > dac_value) ? 1 : 0;
-      if (abs(dac_value - new_dac_value) > Threshold ) {
-        MON Serial.printf("dac %d, blank\n", dac_value);
-        blank();
-      }
-
-      direction = new_direction;
-      dac_value = new_dac_value;
-      dac_write(which_dac, dac_value);
-    }
-
+    target_dac_value = new_dac_value;
   }
-
-  void loop() {
-    update(dac_value);
+  int get_next_val(int val) {
+    return val + (target_dac_value - val + 15)/16;
+  }
+  void run() {
+      int val = dac_value;
+      switch (state) {
+          case ST_BLANK:
+              val = 0;
+              if (--blank_timer == 0) {
+                  state = ST_DISPLAY;
+              }
+              break;
+          case ST_DISPLAY:
+              int next_val = get_next_val(val);
+              if (val != next_val) {
+                  const byte next_direction = next_val > val;
+                  if (next_direction != direction && abs(next_val - val) > Threshold ) {
+                      state = ST_BLANK;
+                      blank_timer = 2;
+                      val = 0;
+                  }
+                  direction = next_direction;
+              }
+              break;
+      }
+      dac_write(which_dac, val);
   }
 
   void dac_write(byte which, int value)
@@ -102,10 +112,12 @@ struct In9 {
 
 
   const byte which_dac;
-  int dac_value;
-
-  byte direction;
   const byte Threshold = 0;
+
+  volatile int dac_value, target_dac_value;
+  St_t state;
+  int blank_timer;
+  byte direction;
 
 };
 
@@ -144,6 +156,13 @@ float update_freq_hist(float f, float w)
   return freq_sum / weight_sum;
 }
 
+IntervalTimer in9_timer;
+
+void update_in9_isr()
+{
+    in9_left.run();
+    in9_right.run();
+}
 
 void setup() {
 
@@ -174,6 +193,8 @@ void setup() {
   Yin_init(&yin16, 128 * NUM_BUFFERS / DECIMATE_FACTOR, 0.05, AUDIO_SAMPLE_RATE_EXACT / DECIMATE_FACTOR);
   queue1.begin();
 #endif
+
+  in9_timer.begin(update_in9_isr, 10000); // 10 milliseconds
 }
 
 
@@ -239,7 +260,9 @@ void loop()
     // cent = 1200 * ln(f1/f2) / ln(2) == 1200 * log2(f1/f2)
     float cent = 1200.0 * log2(filt_freq / nearest);
     //MON Serial.printf("Note: %s\n", note_name);
+
     vfd.write_note(note_name);
+
     in9_left.update(map(min((int)(cent + 0.5), 0), -50, 0, In9::MAX_VAL, In9::MIN_VAL));
     in9_right.update(map(max((int)(cent + 0.5), 0), 0, 50, In9::MIN_VAL, In9::MAX_VAL));
 
@@ -255,8 +278,8 @@ void loop()
     if (yin_valid) last_valid = millis();
   }
 
-  in9_left.loop();
-  in9_right.loop();
+  //in9_left.loop();
+  //in9_right.loop();
   vfd.loop();
 }
 
