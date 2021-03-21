@@ -49,6 +49,7 @@ Yin16 yin16;
 struct In9 {
   static const int MAX_VAL = 250;
   static const int MIN_VAL = 20;
+  static const int BLANK_TIME = 3;
   enum St_t { ST_BLANK, ST_DISPLAY };
     
   In9(byte which_dac_):
@@ -56,8 +57,8 @@ struct In9 {
     dac_value(0),
     target_dac_value(0),
     state(ST_BLANK),
-    blank_timer(2),
-    direction(0)
+    blank_timer(BLANK_TIME),
+    curr_direction(0)
   {}
 
   void setup() {
@@ -66,33 +67,42 @@ struct In9 {
 
   void update(int new_dac_value) {
     target_dac_value = new_dac_value;
+    //MON Serial.printf("DAC %d targ %d -> %d\n", which_dac, dac_value, new_dac_value);
   }
   int get_next_val(int val) {
-    return val + (target_dac_value - val + 15)/16;
+    return val + (target_dac_value - val + 3)/4;
   }
   void run() {
       int val = dac_value;
       switch (state) {
           case ST_BLANK:
               val = 0;
-              if (--blank_timer == 0) {
+              if (millis() >= blank_timer) {
                   state = ST_DISPLAY;
+                  val = MIN_VAL;
               }
               break;
           case ST_DISPLAY:
               int next_val = get_next_val(val);
+              
               if (val != next_val) {
                   const byte next_direction = next_val > val;
-                  if (next_direction != direction && abs(next_val - val) > Threshold ) {
+                  if (next_direction != curr_direction && abs(next_val - val) > Threshold ) {
+                    //MON Serial.printf("DAC %d dir  %d -> %d (%d)\n", which_dac, curr_direction, next_direction, next_val - val);
                       state = ST_BLANK;
-                      blank_timer = 2;
+                      blank_timer = millis() + BLANK_TIME;
                       val = 0;
                   }
-                  direction = next_direction;
+                  else {
+                    dac_value = val = next_val;
+                  }              
+                  curr_direction = next_direction;
               }
               break;
       }
       dac_write(which_dac, val);
+
+      //MON Serial.printf(" DAC %d = %d [%d] %s\n", which_dac, val, target_dac_value, (state == ST_BLANK)?"blank":"");
   }
 
   void dac_write(byte which, int value)
@@ -116,8 +126,8 @@ struct In9 {
 
   volatile int dac_value, target_dac_value;
   St_t state;
-  int blank_timer;
-  byte direction;
+  unsigned long blank_timer;
+  byte curr_direction;
 
 };
 
@@ -194,7 +204,7 @@ void setup() {
   queue1.begin();
 #endif
 
-  in9_timer.begin(update_in9_isr, 10000); // 10 milliseconds
+  in9_timer.begin(update_in9_isr, 1000); // microseconds
 }
 
 
@@ -272,7 +282,7 @@ void loop()
                        filt_freq, yin_valid ? yin_freq : last_yin, nf_valid ? nf_freq : last_nf);
     if (nf_valid) last_nf = nf_freq;
     if (yin_valid) last_yin = yin_freq;
-    //      MON Serial.printf("yin %3.1f, nf %3.1f, rms %.3f\n", yin_valid ? yin_freq : 0.0, nf_valid ? nf_freq : 0.0, rms);
+    //   MON Serial.printf("yin %3.1f, nf %3.1f, rms %.3f\n", yin_valid ? yin_freq : 0.0, nf_valid ? nf_freq : 0.0, rms);
     digitalWriteFast(LED_BUILTIN, !digitalReadFast(LED_BUILTIN));
 
     if (yin_valid) last_valid = millis();

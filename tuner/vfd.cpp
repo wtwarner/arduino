@@ -65,18 +65,15 @@ void Vfd::write_note(const char *note_name)
         segment_left = vfd_segs_notes[vfd_note];
         segment_right = 0;
         if (note_name[1] == '#') {
-            segment_left |= vfd_segs_right_dec;
             segment_right = vfd_segs_sharp;
         }
         else if (note_name[1] == 'b') {
-            segment_left |= vfd_segs_left_dec;
             segment_right = vfd_segs_flat;
         }
         deadline = millis() + 1000;
     }
     
-    write_vfd(segment_left, segment_right);
-    //write_vfd(segment_right, segment_left); 
+    write_vfd(segment_right, segment_left); 
 }
 
 
