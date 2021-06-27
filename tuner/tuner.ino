@@ -6,6 +6,7 @@
 #include "global.h"
 #include "Yin16.h"
 #include "Vfd.h"
+#include "eye.h"
 
 const int AUDIO_IN_PIN = A1;
 
@@ -193,6 +194,7 @@ void setup() {
   vfd.setup();
   in9_left.setup();
   in9_right.setup();
+  setup_eye();
 
   biquad1.setLowpass(0, 20000 / DECIMATE_FACTOR, .7);
 
@@ -241,9 +243,72 @@ bool do_nf(float &freq, float &filt_freq)
 // 1000: .405
 
 long last_valid = 0;
+int test_v = 0; //In9::MIN_VAL;
+static int test_dir = 1;
 void loop()
 {
+  //in9_test();
+  //eye_test();
+  //vfd_test();
+   main_loop();
 
+}
+
+void vfd_test()
+{
+  const char note_names[12][3] = {
+    "C","C#","D","Eb","E","F","F#","G","G#","A","Bb","B"
+  };
+  //int oct;
+  test_v = (test_v + 1) % 12;
+  
+  vfd.write_note(note_names[test_v]);
+  //vfd.write_vfd(1ul << test_v, 1ul << test_v);
+  //vfd.loop();
+  delay(500);
+  digitalWrite(LED_BUILTIN, test_v & 1);
+
+}
+static float test_cent = 0.0;
+void in9_test() {
+    digitalWrite(LED_BUILTIN, test_dir > 0);
+    in9_left.update(map(min((int)(test_cent + 0.5), 0), -50, 0, In9::MAX_VAL, In9::MIN_VAL));
+    in9_right.update(map(max((int)(test_cent + 0.5), 0), 0, 50, In9::MIN_VAL, In9::MAX_VAL));
+
+    test_cent += test_dir*2.5;
+    if (test_cent > 50.) {
+      test_cent = 50.;
+      test_dir = -1;
+    }
+    if (test_cent < -50.) {
+      test_cent = -50.;
+      test_dir = 1;
+    }
+    delay(100);
+
+ }
+
+void eye_test() {
+
+     digitalWrite(LED_BUILTIN, test_dir > 0);
+   
+    test_v += test_dir*5;
+    if (test_v > 100) {
+      test_v = 100;
+      test_dir = -1;
+    }
+    if (test_v < 0) {
+      test_v = 0;
+      test_dir = 1;
+    }
+      write_eye(test_v);
+
+    delay(100);
+
+}
+
+void main_loop()
+{
   bool nf_valid = false;
   float nf_freq, nf_filt_freq;
   bool yin_valid = false;
@@ -275,6 +340,7 @@ void loop()
 
     in9_left.update(map(min((int)(cent + 0.5), 0), -50, 0, In9::MAX_VAL, In9::MIN_VAL));
     in9_right.update(map(max((int)(cent + 0.5), 0), 0, 50, In9::MIN_VAL, In9::MAX_VAL));
+    write_eye(map(abs((int)(cent + 0.5)), 0, 50, 100, 0));
 
     static float last_nf;
     static float last_yin;

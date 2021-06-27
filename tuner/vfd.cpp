@@ -14,13 +14,22 @@ const uint32_t Vfd::vfd_segs_digits[10] = {
 };
 
 const uint32_t Vfd::vfd_segs_notes[NUM_NOTES] = {
-    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15 | SEG_13 | SEG_9, // A
-    SEG_20 | SEG_14 | SEG_17 | SEG_6 | SEG_13 | SEG_9 | SEG_15 | SEG_4 | SEG_8, // B
-    SEG_20 | SEG_14 | SEG_4 | SEG_8 | SEG_21 | SEG_3  , // C
-    SEG_20 | SEG_14 | SEG_17 | SEG_6 | SEG_13 | SEG_9 | SEG_4 | SEG_8, // D
-    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15 | SEG_4 | SEG_8, // E
-    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15, // F
-    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_15 | SEG_9 | SEG_4 | SEG_8, // G
+//    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15 | SEG_13 | SEG_9, // A
+//    SEG_20 | SEG_14 | SEG_17 | SEG_6 | SEG_13 | SEG_9 | SEG_15 | SEG_4 | SEG_8, // B
+//    SEG_20 | SEG_14 | SEG_4 | SEG_8 | SEG_21 | SEG_3  , // C
+//    SEG_20 | SEG_14 | SEG_17 | SEG_6 | SEG_13 | SEG_9 | SEG_4 | SEG_8, // D
+//    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15 | SEG_4 | SEG_8, // E
+//    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_19 | SEG_15, // F
+//    SEG_20 | SEG_14 | SEG_21 | SEG_3 | SEG_15 | SEG_9 | SEG_4 | SEG_8, // G
+
+  SEG_4 | SEG_8 | SEG_13 | SEG_9 | SEG_21 | SEG_3 | SEG_15 | SEG_19, // A
+  SEG_4 | SEG_8 | SEG_17 | SEG_6 | SEG_21 | SEG_3 | SEG_20 | SEG_19 | SEG_14 ,// B
+  SEG_4 | SEG_8 | SEG_13 | SEG_9 | SEG_20 | SEG_14 , // C
+  SEG_20 | SEG_14 | SEG_17 | SEG_6 | SEG_21 | SEG_3 | SEG_4 | SEG_8, // D
+  SEG_20 | SEG_14 | SEG_13 | SEG_9 | SEG_15 | SEG_4 | SEG_8, // E
+  SEG_13 | SEG_9 | SEG_15 | SEG_4 | SEG_8, // F
+  SEG_4 | SEG_8 | SEG_13 | SEG_9 | SEG_20 | SEG_14 | SEG_19 | SEG_21, // G
+
 };
 
 void Vfd::setup() {
@@ -73,7 +82,7 @@ void Vfd::write_note(const char *note_name)
         deadline = millis() + 1000;
     }
     
-    write_vfd(segment_right, segment_left); 
+    write_vfd(segment_left, segment_right); 
 }
 
 
