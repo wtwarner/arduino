@@ -1,6 +1,6 @@
-static const int PIN_CLK = 2;
-static const int PIN_STROBE = 5;
-static const int PIN_DATA = 7;
+static const int PIN_CLK = 10;
+static const int PIN_STROBE = 8;
+static const int PIN_DATA = 11;
 static const int PIN_BLANK = 9;
 
 
