@@ -51,65 +51,95 @@ struct In9 {
   static const int MAX_VAL = 250;
   static const int MIN_VAL = 20;
   static const int BLANK_TIME = 3;
-  enum St_t { ST_BLANK, ST_DISPLAY };
+  static const int BLANK_START_TIME = 13; // ~75Hz
+  static const int UNPOISON_TIME = 1;
+  static const int UNPOISON_START_TIME = 1000; // 1 second
+  enum St_t { ST_IDLE, ST_BLANK, ST_UNPOISON, ST_DISPLAY };
     
   In9(byte which_dac_):
     which_dac(which_dac_),
     dac_value(0),
-    target_dac_value(0),
-    state(ST_BLANK),
-    blank_timer(BLANK_TIME),
-    curr_direction(0)
+    target_dac_value(MIN_VAL),
+    state(ST_IDLE),
+    blank_timer(0),
+    unpoison_timer(0),
+    valid_timer(0)
   {}
 
   void setup() {
-    dac_write(which_dac, 0);
+    dac_write(0);
   }
 
   void update(int new_dac_value) {
     target_dac_value = new_dac_value;
+    valid_timer = millis() + 1000;
     //MON Serial.printf("DAC %d targ %d -> %d\n", which_dac, dac_value, new_dac_value);
   }
-  int get_next_val(int val) {
-    return val + (target_dac_value - val + 3)/4;
-  }
+
   void run() {
-      int val = dac_value;
+      int val = dac_value;      // default
+      const bool val_changed = target_dac_value != val;
+      const bool timer_expired = millis() >= blank_timer;
+      const bool unpoison_timer_expired = millis() >= unpoison_timer;
+
       switch (state) {
-          case ST_BLANK:
+          case ST_IDLE:
               val = 0;
-              if (millis() >= blank_timer) {
-                  state = ST_DISPLAY;
-                  val = MIN_VAL;
+              if (blank_timer == 0 ||  // at startup
+                  unpoison_timer_expired) {
+                  state = ST_UNPOISON;
+                  unpoison_timer = millis() + UNPOISON_TIME;
+              }
+              else if (val_changed) {
+                  state = ST_BLANK;;
+                  blank_timer = millis() + BLANK_TIME;
               }
               break;
-          case ST_DISPLAY:
-              int next_val = get_next_val(val);
               
-              if (val != next_val) {
-                  const byte next_direction = next_val > val;
-                  if (next_direction != curr_direction && abs(next_val - val) > Threshold ) {
-                    //MON Serial.printf("DAC %d dir  %d -> %d (%d)\n", which_dac, curr_direction, next_direction, next_val - val);
-                      state = ST_BLANK;
-                      blank_timer = millis() + BLANK_TIME;
-                      val = 0;
-                  }
-                  else {
-                    dac_value = val = next_val;
-                  }              
-                  curr_direction = next_direction;
+          case ST_UNPOISON:
+              val = min(255, MAX_VAL + (MAX_VAL>>3)); // 1 1/8 overdrive
+              if (val_changed ||                      // abort unpoison
+                  unpoison_timer_expired) {
+                  state = ST_BLANK;
+                  blank_timer = millis() + BLANK_TIME;
+                  unpoison_timer = millis() + UNPOISON_START_TIME;
+              }
+              break;
+              
+          case ST_BLANK:
+              val = 0;
+              if (unpoison_timer_expired) {
+                  state = ST_UNPOISON;
+                  unpoison_timer = millis() + UNPOISON_TIME;
+              }
+              else if (timer_expired) {
+                  state = ST_DISPLAY;
+                  blank_timer = millis() + BLANK_START_TIME;
+              }
+              break;
+              
+          case ST_DISPLAY:
+              if (timer_expired) {
+                  state = ST_BLANK;
+                  blank_timer = millis() + BLANK_TIME;
+              }
+              else if (millis() >= valid_timer) {
+                  state = ST_IDLE;
+              }
+              else {
+                  val = target_dac_value;
               }
               break;
       }
-      dac_write(which_dac, val);
+      dac_write(val);
 
       //MON Serial.printf(" DAC %d = %d [%d] %s\n", which_dac, val, target_dac_value, (state == ST_BLANK)?"blank":"");
   }
 
-  void dac_write(byte which, int value)
+  void dac_write(int value)
   {
     const byte range = 0;
-    const uint16_t v16 = (which << 9) | (range << 8) | value;
+    const uint16_t v16 = (which_dac << 9) | (range << 8) | value;
 
     for (byte b = 0; b < 16; b ++) {
       digitalWrite(DAC_CLK, HIGH);
@@ -119,16 +149,16 @@ struct In9 {
     digitalWrite(DAC_LOAD, LOW);
     delayMicroseconds(1); // 250 ns min pulse
     digitalWrite(DAC_LOAD, HIGH);
+
+    dac_value = value;
   }
 
 
   const byte which_dac;
-  const byte Threshold = 0;
 
   volatile int dac_value, target_dac_value;
   St_t state;
-  unsigned long blank_timer;
-  byte curr_direction;
+  unsigned long blank_timer, unpoison_timer, valid_timer;
 
 };
 
@@ -353,9 +383,9 @@ void main_loop()
 
     if (yin_valid) last_valid = millis();
   }
-
-  //in9_left.loop();
-  //in9_right.loop();
+  if ((millis() - last_valid) > 1000) {
+      write_eye(0);
+  }
   vfd.loop();
 }
 
