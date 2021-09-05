@@ -52,8 +52,8 @@ struct In9 {
   static const int MIN_VAL = 20;
   static const int BLANK_TIME = 3;
   static const int BLANK_START_TIME = 13; // ~75Hz
-  static const int UNPOISON_TIME = 1;
-  static const int UNPOISON_START_TIME = 1000; // 1 second
+  static const int UNPOISON_TIME = 10;
+  static const int UNPOISON_START_TIME = 2000; // 1 second
   enum St_t { ST_IDLE, ST_BLANK, ST_UNPOISON, ST_DISPLAY };
     
   In9(byte which_dac_):

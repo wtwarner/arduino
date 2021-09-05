@@ -1,11 +1,6 @@
 #include <TimeLib.h>
 #include <Timezone_Generic.h>
-
-//static const int PIN_CLK = 12;
-//static const int PIN_SDI = 11;
-//static const int PIN_STROBE = 10;
-//static const int PIN_OE_ = 9;
-//static const int PIN_LED = LED_BUILTIN;
+#include "ir.h"
 
 static const int PIN_CLK = 6;
 static const int PIN_SDI = 7;
@@ -13,7 +8,8 @@ static const int PIN_STROBE = 8;
 static const int PIN_OE_ = 9;
 static const int PIN_LED = 17;  // TX
 
-extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
+extern bool ds3231_setup();
+extern time_t ds3231_get_unixtime(void); 
 
 //
 // TimeZone
@@ -50,26 +46,69 @@ void setup() {
   else {
     Serial.println("ds3231_setup failed; setting");
    // local "ISO 8601" format e.g. 2020-06-25T15:29:37
-      time_t local_time = datetime_parse("2021-08-07T14:02:00");
+      time_t local_time = datetime_parse("2021-09-04T19:38:00");
       time_t new_utc = myTZ.toUTC(local_time);
        Serial.print("Set time: ");
         printDateTime(new_utc, tcr->abbrev);
   
     ds3231_set(new_utc);
   }
+
+  ir_setup();
 }
 
 const uint8_t map_seg_to_bit[7] = {
   5, 6, 1, 0, 4, 3, 2
 };
 
+const uint8_t NUM_DIGITS = 3;
+const uint8_t TUBE_PER_DIG = 2;
 uint16_t cnt = 0;
-void loop() {
-   uint16_t seg_bit0 = ((cnt/7) == 0) ? (1 << map_seg_to_bit[cnt % 7]) : 0;
-   uint16_t seg_bit1 = ((cnt/7) == 1) ? (1 << map_seg_to_bit[cnt % 7]) : 0;
-   uint16_t sdi_d = seg_bit0 | (seg_bit1 << 8);
-     for (int i = 0; i < 16; i ++) {
-      digitalWrite(PIN_SDI, (sdi_d >> (15 - i)) & 0x1);
+uint8_t sdi_d[NUM_DIGITS * TUBE_PER_DIG] = {0};
+const int TUBE(uint8_t digit, uint8_t lo_hi) {
+    return digit * TUBE_PER_DIG + lo_hi;
+}
+
+void do_ir()
+{
+  ir_cmd_t ir_cmd;
+  bool ir_rep;
+  if (ir_check(ir_cmd, ir_rep)) {
+      switch (ir_cmd) {
+          case IR_FF:
+              if (!ir_rep)
+                  ;
+              break;
+          case IR_FUNCSTOP:
+              if (ir_rep) {
+                  ; // nop
+              }
+              
+              break;
+
+          case IR_VOLUP:
+
+              break;
+          case IR_VOLDOWN:
+
+              break;
+      }
+  }
+}
+
+void do_test_vfd() {
+  uint8_t digit = cnt/14;
+  uint8_t lo_hi = (cnt/7) % 2;
+  uint8_t seg = cnt % 7;
+  memset(sdi_d, 0, sizeof(sdi_d));
+  
+   //sdi_d[TUBE(digit,lo_hi)] |= 1 << map_seg_to_bit[seg];
+  for (uint8_t tube = 0 ; tube < 6; tube ++) {
+   sdi_d[tube] = (cnt&1) ? (1<<map_seg_to_bit[tube]) : ~(1<<map_seg_to_bit[tube]);
+  }
+   
+   for (int i = 0; i < NUM_DIGITS * TUBE_PER_DIG * 8; i ++) {
+      digitalWrite(PIN_SDI, (sdi_d[NUM_DIGITS * TUBE_PER_DIG - 1 - i/8] >> (7 - (i%8))) & 0x1);
       digitalWrite(PIN_CLK, 1);
       digitalWrite(PIN_CLK, 0);
    }
@@ -77,12 +116,21 @@ void loop() {
    digitalWrite(PIN_STROBE, 0);
    digitalWrite(PIN_OE_, 0);
 
-   
-   delay(250);
-   cnt=(cnt+1)%14;
+
+   cnt=(cnt+1)%28;
    digitalWrite(PIN_LED, cnt&1);
 }
 
+long last_ms = 0;
+void loop() {
+  do_ir();
+
+  if (millis() > (last_ms + 250)) {
+    do_test_vfd();
+    last_ms = millis();
+  }
+  
+}
 void printDateTime(time_t t, const char *tz) {
   char buf[32];
 
