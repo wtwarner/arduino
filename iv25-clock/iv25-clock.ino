@@ -55,6 +55,7 @@ void setup() {
   }
 
   ir_setup();
+  bt_setup();
 }
 
 const uint8_t map_seg_to_bit[7] = {
@@ -125,11 +126,20 @@ long last_ms = 0;
 void loop() {
   do_ir();
 
+
   if (millis() > (last_ms + 250)) {
     do_test_vfd();
     last_ms = millis();
   }
-  
+
+ String bt_cmd;
+ if (bt_loop(bt_cmd)) {
+    if (bt_cmd.startsWith("b ")) {
+          int pwm = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
+          Serial.print("pwm:"); Serial.println(pwm);
+    }
+
+  }
 }
 void printDateTime(time_t t, const char *tz) {
   char buf[32];
