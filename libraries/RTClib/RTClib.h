@@ -340,6 +340,9 @@ public:
   void disable32K(void);
   bool isEnabled32K(void);
   static float getTemperature(); // in Celcius degree
+
+  static bool RTC_DS3231::setUserBytes(const uint8_t *bytes, int num_bytes);
+  static bool RTC_DS3231::getUserBytes(uint8_t *bytes, int num_bytes);
 };
 
 /** PCF8523 INT/SQW pin mode settings */

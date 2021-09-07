@@ -1746,6 +1746,66 @@ bool RTC_DS3231::setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode) {
 
 /**************************************************************************/
 /*!
+    @brief  Set user bytes in alarm 1-2 registers for DS3231.  Alarm 1 is disabled;
+        alarm 2 is also disabled if num_bytes > 4.
+        @param 	bytes pointer to 1-7 bytes
+        @param 	num_bytes 1-7
+    @return False if control register is not set, otherwise true
+*/
+/**************************************************************************/
+bool RTC_DS3231::setUserBytes(const uint8_t *bytes, int num_bytes)
+{
+    uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL);
+    if (!(ctrl & 0x04)) {
+        return false;
+    }
+    
+    Wire.beginTransmission(DS3231_ADDRESS);
+    Wire._I2C_WRITE(DS3231_ALARM1);
+    while (num_bytes --) {
+        Wire._I2C_WRITE(*bytes ++);
+    }
+    Wire.endTransmission();
+
+    ctrl &= ~0x01;  // AI1E off
+    if (num_bytes > 4) {
+      ctrl &= ~0x02; // AI2E off
+    }
+    write_i2c_register(DS3231_ADDRESS, DS3231_CONTROL, ctrl);
+
+    return true;
+}
+
+/**************************************************************************/
+/*!
+    @brief  get user bytes in alarm 1-2 for DS3231.
+        @param 	bytes pointer to 1-7 bytes
+        @param 	num_bytes 1-7
+    @return False if control register is not set, otherwise true
+*/
+/**************************************************************************/
+bool RTC_DS3231::getUserBytes(uint8_t *bytes, int num_bytes)
+{
+    const uint8_t ctrl = read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL);
+    if (!(ctrl & 0x04)) {
+        return false;
+    }
+    
+    Wire.beginTransmission(DS3231_ADDRESS);
+    Wire._I2C_WRITE(DS3231_ALARM1);
+    Wire.endTransmission();
+
+    Wire.requestFrom(DS3231_ADDRESS, num_bytes);
+    while (num_bytes --) {
+        *bytes ++ = Wire._I2C_READ();
+    }
+    Wire.endTransmission();
+    
+    return true;
+}
+
+/**************************************************************************/
+/*!
     @brief  Disable alarm
         @param 	alarm_num Alarm number to disable
 */
