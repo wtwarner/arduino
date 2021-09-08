@@ -7,14 +7,14 @@
 #include <elapsedMillis.h>
 #include "ir.h"
 
+// RX/TX Serial for HM-10: pin 0/1
+// I2C (RTC) pin 2/3
+// IR Pin 4
 static const int PIN_CLK = 6;
 static const int PIN_SDI = 7;
 static const int PIN_STROBE = 8;
 static const int PIN_OE_ = 9;
-static const int PIN_LED = 17;
-
-extern bool ds3231_setup();
-extern time_t ds3231_get_unixtime(void); 
+static const int PIN_LED = 17;  // builtin
 
 struct nonvolatile_state_t {
     nonvolatile_state_t() {
@@ -24,6 +24,7 @@ struct nonvolatile_state_t {
     void init()
     {
         st.brightness = 255;
+        st.rotation = 0;
         for (int i=0; i < sizeof(st.reserved); i++) {
             st.reserved[i] = 0;
         }
@@ -57,7 +58,8 @@ struct nonvolatile_state_t {
     union {
         uint8_t bytes[Size];
         struct {
-            uint8_t brightness;
+            uint8_t brightness; // 0..255
+            uint8_t rotation; // 0..11
             uint8_t reserved[Size-2];
             uint8_t checksum;
         } st;
@@ -90,12 +92,17 @@ private:
 //
 // global state
 //
-nonvolatile_state_t g_state;
+bool g_time_valid = false;
+time_t g_local_time = 0;
+bool g_first_vfd_update = false;
+int g_test_mode = 1;
+
+nonvolatile_state_t g_nv_state;
 
 //
 // IR
 //
-my_vector<12, uint8_t> ir_nums;
+my_vector<12, uint8_t> ir_nums; // sized for YYMMDDHHMMSS
 
 //
 // TimeZone
@@ -111,6 +118,7 @@ void setup() {
   Serial.begin(9600);
   delay(1500);
   Serial.println("Start");
+  
  pinMode(PIN_LED, OUTPUT);
 
  pinMode(PIN_CLK, OUTPUT);
@@ -128,25 +136,29 @@ void setup() {
      time_t local = myTZ.toLocal(utc, &tcr);
      Serial.println("Local time:");
      printDateTime(local, tcr->abbrev);
+     g_time_valid = true;
   }
   else {
-    Serial.println("ds3231_setup failed; setting");
-   // local "ISO 8601" format e.g. 2020-06-25T15:29:37
+    Serial.println("ds3231_setup failed");
+#if 0    
+    // local "ISO 8601" format e.g. 2020-06-25T15:29:37
       time_t local_time = datetime_parse("2021-09-04T19:38:00");
       time_t new_utc = myTZ.toUTC(local_time);
       Serial.print("Set time: ");
       printDateTime(new_utc, tcr->abbrev);
   
     ds3231_set(new_utc);
+    g_time_valid = true;
+#endif
   }
-  if (ds3231_getUserBytes(g_state.get_bytes(), g_state.get_size())) {
-      if (g_state.validate_checksum()) {
-          Serial.print("Get valid user state; b "); Serial.println(g_state.st.brightness);
+  if (ds3231_getUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size())) {
+      if (g_nv_state.validate_checksum()) {
+          Serial.print("Get valid user state; b "); Serial.println(g_nv_state.st.brightness);
       }
       else {
           Serial.println("Bad user state; re-init");
-          g_state.init();
-          ds3231_setUserBytes(g_state.get_bytes(), g_state.get_size());
+          g_nv_state.init();
+          write_nvm();
       }
   }
   ir_setup();
@@ -154,6 +166,9 @@ void setup() {
   bt_setup();
 }
 
+//
+// VFD tube
+//
 const uint8_t map_seg_to_bit[7] = {
   5, 6, 1, 0, 4, 3, 2
 };
@@ -161,18 +176,19 @@ const uint8_t map_seg_to_bit[7] = {
 const uint8_t NUM_DIGITS = 12;
 const uint8_t TUBE_PER_DIG = 2;
 uint8_t sdi_d[NUM_DIGITS * TUBE_PER_DIG] = {0};
+
 const int TUBE(uint8_t digit, uint8_t lo_hi) {
-    return digit * TUBE_PER_DIG + lo_hi;
+    return (digit + g_nv_state.st.rotation) % NUM_DIGITS * TUBE_PER_DIG + lo_hi;
 }
-bool first_vfd_update = false;
 
-int test_mode = 1;
-
-void do_ir()
+bool do_ir()
 {
   ir_cmd_t ir_cmd;
-  bool ir_rep;
+  bool ir_rep;                  // repeated-key flag. Usually ignored.
+  
   if (ir_check(ir_cmd, ir_rep)) {
+      const int prev_ir_nums_size = ir_nums.size(); // track number entry
+      
       switch (ir_cmd) {
           //
           // accumulate entered number
@@ -208,10 +224,6 @@ void do_ir()
               if (!ir_rep) ir_nums.push_back(9);
               break;
 
-          case IR_CHUP:
-              ir_nums.clear();
-              break;
-
           case IR_200:
               if (!ir_rep && ir_nums.size() > 0) {
                   int val = 0;
@@ -219,7 +231,14 @@ void do_ir()
                       val = val*10 + ir_nums[i];
                   }
                   set_brightness(val);
-                  ir_nums.clear();
+              }
+              break;
+
+          case IR_VOLUP:
+          case IR_VOLDOWN:
+              if (true) { // allow repeated
+                  int dir = (ir_cmd == IR_VOLDOWN) ? -1 : +1;
+                  set_brightness(g_nv_state.st.brightness + dir);
               }
               break;
 
@@ -254,16 +273,18 @@ void do_ir()
                       tm.Second = ir_nums[i] * 10 + ir_nums[i+1];
                       i += 2;
                   }
+
                   time_t new_local = makeTime(tm);
                   time_t new_utc = myTZ.toUTC(new_local);
                   Serial.print("Set time: ");
                   printDateTime(new_utc, tcr->abbrev);
                   ds3231_set(new_utc);
-                  ir_nums.clear();
+                  g_time_valid = true;
+                  time_to_vfd();
               }
               break;
 
-          case IR_REW:
+          case IR_CH:
               if (!ir_rep) {
                   time_t utc = ds3231_get_unixtime();
                   time_t local = myTZ.toLocal(utc, &tcr);
@@ -272,47 +293,58 @@ void do_ir()
               }
               break;
               
-          case IR_VOLUP:
-              set_brightness(min(255, g_state.st.brightness + 1));
+          case IR_FF:
+          case IR_REW:
+              if (!ir_rep) {
+                  uint8_t dir = (ir_cmd == IR_REW) ? 11 : 1;
+                  set_rotation((g_nv_state.st.rotation + dir) % NUM_DIGITS);
+              }
               break;
-          case IR_VOLDOWN:
-              set_brightness(max(0, g_state.st.brightness - 1));
-              break;
-
-          case IR_CHDOWN: {
-                Serial.println(" i2c reset...");
-                int timeout=100;
-                while (-- timeout  && digitalRead(2) == 0) {
-                   digitalWrite(3, 0);
-                   digitalWrite(3, 1);
-                }
-                Serial.print("Done "); Serial.println(timeout);
-                break;
-           }
-
+              
           case IR_EQ:
               if (!ir_rep && ir_nums.size() > 0) {
                   int val = 0;
                   for (int i = 0; i < ir_nums.size(); i ++) {
                       val = val*10 + ir_nums[i];
                   }
-                  test_mode = val;
-                  ir_nums.clear();
-                  Serial.print("Set test mode "); Serial.println(test_mode);
+                  g_test_mode = val;
+                  Serial.print("Set test mode "); Serial.println(g_test_mode);
               }
               break;
       }
+
+      // if a key other than a digit was entered, clear the accumulated number.
+      if (!ir_rep && ir_nums.size() != prev_ir_nums_size) {
+          ir_nums.clear();
+      }
+
+      return true;
   }
+
+  return false;
 }
 
-void set_brightness(uint8_t b) {
-    b = max(0, min(b, 255));
+void set_brightness(int b_) {
+    uint8_t b = max(0, min(b_, 255));
     analogWrite(PIN_OE_, 255 - b);
     Serial.print("Set brightness: "); Serial.println(b);
-    if (g_state.st.brightness != b) {
-        g_state.st.brightness = b;
-        ds3231_setUserBytes(g_state.get_bytes(), g_state.get_size());
+    if (g_nv_state.st.brightness != b) {
+        g_nv_state.st.brightness = b;
+        write_nvm();
     }
+}
+
+void set_rotation(int r_) {
+    uint8_t r = max(0, min(r_, NUM_DIGITS-1));
+    Serial.print("Set rotation: "); Serial.println(r);
+    if (g_nv_state.st.rotation != r) {
+        g_nv_state.st.rotation = r;
+        write_nvm();
+    }
+}
+
+void write_nvm() {
+    ds3231_setUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size());
 }
 
 void update_vfd()
@@ -324,23 +356,27 @@ void update_vfd()
     }
     digitalWrite(PIN_STROBE, 1);
     digitalWrite(PIN_STROBE, 0);
-    if (!first_vfd_update) {
-        set_brightness(g_state.st.brightness);
-        first_vfd_update = true;
+    if (!g_first_vfd_update) {
+        set_brightness(g_nv_state.st.brightness);
+        g_first_vfd_update = true;
     }
 }
 
 void time_to_vfd()
 {
     const time_t utc_time = ds3231_get_unixtime();
-    const time_t local_time = myTZ.toLocal(utc_time, &tcr);
+    const time_t new_local_time = myTZ.toLocal(utc_time, &tcr);
+    if (new_local_time == g_local_time) {
+        return;
+    }
+    g_local_time = new_local_time;
 
     memset(sdi_d, 0, sizeof(sdi_d));
 
-    int hr_tube0 = TUBE(hour(local_time) % 12, 0);
-    int hr_tube1 = TUBE(hour(local_time) % 12, 1);
-    int min_tube0 = TUBE(minute(local_time) / 5, 0);
-    int min_tube1 = TUBE(minute(local_time) / 5, 1);
+    int hr_tube0 = TUBE(hour(g_local_time) % 12, 0);
+    int hr_tube1 = TUBE(hour(g_local_time) % 12, 1);
+    int min_tube0 = TUBE(minute(g_local_time) / 5, 0);
+    int min_tube1 = TUBE(minute(g_local_time) / 5, 1);
 
     // hour: set all 7 of lower tube of hour segment
     for (int i = 0; i < 7; i ++) {
@@ -358,7 +394,7 @@ void time_to_vfd()
     for (int i = 0; i < 2; i ++) {
         sdi_d[min_tube1] |= 1<<map_seg_to_bit[i];
     }
-    int minutes_extra = minute(local_time) % 5;
+    int minutes_extra = minute(g_local_time) % 5;
     if (minutes_extra == 0) {
         minutes_extra = 5;
     }
@@ -367,37 +403,14 @@ void time_to_vfd()
     }
 
     // second: flash remaining 10 segments' lowest
-    for (int i = 0; i < 12; i ++) {
+    for (int i = 0; i < NUM_DIGITS; i ++) {
         int sec_tube = TUBE(i, 0);
         if (sec_tube != hr_tube0 && sec_tube != min_tube0) {
-            sdi_d[sec_tube] |= (second(local_time) & 1) << map_seg_to_bit[0];
+            sdi_d[sec_tube] |= (second(g_local_time) & 1) << map_seg_to_bit[0];
         }
     }
-    digitalWrite(PIN_LED, (second(local_time) & 1));
+    digitalWrite(PIN_LED, (second(g_local_time) & 1));
     update_vfd();
-}
-
-void do_test_vfd2()
-{
-    const time_t utc_time = ds3231_get_unixtime();
-    const time_t local_time = myTZ.toLocal(utc_time, &tcr);
-
-    memset(sdi_d, 0, sizeof(sdi_d));
-
-    int hr_tube0 = TUBE(0, 0);
-    int hr_tube1 = TUBE(0, 1);
-    int min_tube0 = TUBE(1, 0);
-    int min_tube1 = TUBE(1, 1);
-    int sec_tube0 = TUBE(2, 0);
-    int sec_tube1 = TUBE(2, 1);
-
-    sdi_d[(hour(local_time) % 12 / 7) ? hr_tube1 : hr_tube0] |= 1<<map_seg_to_bit[ hour(local_time) % 12 % 7 ];
-    sdi_d[(minute(local_time) / 7) ? min_tube1 : min_tube0] |= 1<<map_seg_to_bit[ minute(local_time) % 7 ];
-    sdi_d[(second(local_time) / 7) ? sec_tube1 : sec_tube0] |= 1<<map_seg_to_bit[ second(local_time) % 7 ];
-  
-    digitalWrite(PIN_LED, (second(local_time) & 1));
-    update_vfd();
-
 }
 
 void do_test_vfd() {
@@ -407,7 +420,6 @@ void do_test_vfd() {
   uint8_t seg = cnt % 7;
   memset(sdi_d, 0, sizeof(sdi_d));
   
-   //sdi_d[TUBE(digit,lo_hi)] |= 1 << map_seg_to_bit[seg];
   for (uint8_t tube = 0 ; tube < 6; tube ++) {
    sdi_d[tube] = (cnt&1) ? (1<<map_seg_to_bit[tube]) : ~(1<<map_seg_to_bit[tube]);
   }
@@ -420,29 +432,14 @@ void do_test_vfd() {
 elapsedMillis vfd_timer;
 
 void loop() {
-  do_ir();
-
-  if (vfd_timer >= 500) {
-      if (test_mode == 0) {
-          time_to_vfd();
-      }
-      else if (test_mode == 1) {
-        const time_t utc_time = ds3231_get_unixtime();
-          do_test_vfd();
-      }
-      else if (test_mode == 2) {
-        do_test_vfd2();
-      }
-      vfd_timer = 0;
-  }
-
+  bool has_command = do_ir();
 
   String bt_cmd;
   if (bt_loop(bt_cmd)) {
       if (bt_cmd.startsWith("b ")) {
-          int pwm = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
-          Serial.print("bt pwm:"); Serial.println(pwm);
-          set_brightness(pwm);
+          int b = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
+          Serial.print("bt brightness:"); Serial.println(b);
+          set_brightness(b);
       }
       else if (bt_cmd.startsWith("st ")) { // local "ISO 8601" format e.g. 2020-06-25T15:29:37
           time_t local_time = datetime_parse(bt_cmd.substring(bt_cmd.indexOf(' ') + 1));
@@ -451,8 +448,25 @@ void loop() {
           Serial.print("bt set time: ");
           printDateTime(local_time, tcr->abbrev);
           ds3231_set(new_utc);
+          g_time_valid = true;
       }
+      else if (bt_cmd.startsWith("r ")) {
+          int rot = atoi(bt_cmd.substring(bt_cmd.indexOf(' ')).c_str());
+          Serial.print("bt rot:"); Serial.println(rot);
+          set_rotation(rot);
+          write_nvm();
+      }
+      has_command = true;
+  }
 
+  if (g_test_mode == 0 && g_time_valid && (has_command || vfd_timer >= 200)) {
+      time_to_vfd();
+      vfd_timer = 0;
+  }
+  else if (has_command || vfd_timer >= 500) {
+      const time_t utc_time = ds3231_get_unixtime(); // FIXME testing I2C
+      do_test_vfd();
+      vfd_timer = 0;
   }
 
 }
@@ -462,7 +476,7 @@ void printDateTime(time_t t, const char *tz) {
 
   char m[4]; // temporary storage for month string (DateStrings.cpp uses shared
              // buffer)
-  strcpy(m, monthShortStr(month(t)));
+  strlcpy(m, monthShortStr(month(t)), 4);
   sprintf(buf, "%.2d:%.2d:%.2d %s %.2d %s %d %s", hour(t), minute(t), second(t),
           dayShortStr(weekday(t)), day(t), m, year(t), tz);
   Serial.println(buf);
