@@ -27,6 +27,8 @@
 #  error F_CPU unkown
 #endif
 
+#define IRMP_NEC_REPETITION_PROTOCOL                0xFF            // pseudo protocol: NEC repetition frame
+
 /*---------------------------------------------------------------------------------------------------------------------------------------------------
  *  ATtiny pin definition of OC0A / OC0B
  *  ATmega pin definition of OC2 / OC2A / OC2B / OC0 / OC0A / OC0B
@@ -243,6 +245,15 @@
 #define IRSND_NEC_1_PAUSE_LEN                       (uint8_t)(F_INTERRUPTS * NEC_1_PAUSE_TIME + 0.5)
 #define IRSND_NEC_0_PAUSE_LEN                       (uint8_t)(F_INTERRUPTS * NEC_0_PAUSE_TIME + 0.5)
 #define IRSND_NEC_FRAME_REPEAT_PAUSE_LEN            (uint16_t)(F_INTERRUPTS * NEC_FRAME_REPEAT_PAUSE_TIME + 0.5)                    // use uint16_t!
+
+#define IRSND_MELINERA_START_BIT_PULSE_LEN          (uint8_t)(F_INTERRUPTS * MELINERA_START_BIT_PULSE_TIME + 0.5)
+#define IRSND_MELINERA_START_BIT_PAUSE_LEN          (uint8_t)(F_INTERRUPTS * MELINERA_START_BIT_PAUSE_TIME + 0.5)
+#define IRSND_MELINERA_REPEAT_START_BIT_PAUSE_LEN   (uint8_t)(F_INTERRUPTS * MELINERA_REPEAT_START_BIT_PAUSE_TIME + 0.5)
+#define IRSND_MELINERA_1_PULSE_LEN                  (uint8_t)(F_INTERRUPTS * MELINERA_1_PULSE_TIME + 0.5)
+#define IRSND_MELINERA_0_PULSE_LEN                  (uint8_t)(F_INTERRUPTS * MELINERA_0_PULSE_TIME + 0.5)
+#define IRSND_MELINERA_1_PAUSE_LEN                  (uint8_t)(F_INTERRUPTS * MELINERA_1_PAUSE_TIME + 0.5)
+#define IRSND_MELINERA_0_PAUSE_LEN                  (uint8_t)(F_INTERRUPTS * MELINERA_0_PAUSE_TIME + 0.5)
+#define IRSND_MELINERA_FRAME_REPEAT_PAUSE_LEN       (uint16_t)(F_INTERRUPTS * MELINERA_FRAME_REPEAT_PAUSE_TIME + 0.5)               // use uint16_t!
 
 #define IRSND_SAMSUNG_START_BIT_PULSE_LEN           (uint8_t)(F_INTERRUPTS * SAMSUNG_START_BIT_PULSE_TIME + 0.5)
 #define IRSND_SAMSUNG_START_BIT_PAUSE_LEN           (uint8_t)(F_INTERRUPTS * SAMSUNG_START_BIT_PAUSE_TIME + 0.5)
@@ -543,6 +554,7 @@ volatile uint8_t                                irsnd_is_on = FALSE;
 static volatile uint8_t                         irsnd_protocol = 0;
 static volatile uint8_t                         irsnd_buffer[11] = {0};
 static volatile uint8_t                         irsnd_repeat = 0;
+static volatile uint8_t                         irsnd_suppress_trailer = 0;
 
 #if defined(ARDUINO)
 #include "irsndArduinoExt.cpp.h" // must be after the declarations of irsnd_busy etc.
@@ -1042,7 +1054,9 @@ static uint8_t  sircs_additional_bitlen;
 #endif // IRSND_SUPPORT_SIRCS_PROTOCOL == 1
 
 /*
- * @param  do_wait - wait for last command to have ended before sending. For Arduino: Additionally wait for sent command to have ended.
+ * @param  do_wait - wait for last command to have ended sending its trailing space before start of new sending.
+ *                   For Arduino: Additionally wait for sent command to have ended (including trailing gap).
+ * @return value of irsnd_busy. I.e. true if sending was accepted and do_wait was false, false if protocol was not found or do_wait was true;
  */
 #  ifdef __cplusplus
 bool
@@ -1076,13 +1090,16 @@ irsnd_send_data (IRMP_DATA * irmp_data_p, uint8_t do_wait)
             // wait for last command to have ended
         }
     }
+#if !defined(ARDUINO)
     else if (irsnd_busy)
     {
         return (FALSE);
     }
+#endif
 
     irsnd_protocol  = irmp_data_p->protocol;
     irsnd_repeat    = irmp_data_p->flags & IRSND_REPETITION_MASK;
+    irsnd_suppress_trailer  = (irmp_data_p->flags & IRSND_SUPPRESS_TRAILER) ? TRUE : FALSE;
 
     switch (irsnd_protocol)
     {
@@ -1140,14 +1157,22 @@ irsnd_send_data (IRMP_DATA * irmp_data_p, uint8_t do_wait)
         }
         case IRMP_NEC_PROTOCOL:
         {
-            address = bitsrevervse (irmp_data_p->address, NEC_ADDRESS_LEN);
-            command = bitsrevervse (irmp_data_p->command, NEC_COMMAND_LEN);
+            if (irmp_data_p->flags & IRSND_RAW_REPETITION_FRAME)
+            {
+                irsnd_protocol = IRMP_NEC_REPETITION_PROTOCOL;                                          // send a raw repetition frame
+                irsnd_buffer[0] = 0x00;                                                                 // no address, no command
+            }
+            else
+            {
+                address = bitsrevervse (irmp_data_p->address, NEC_ADDRESS_LEN);
+                command = bitsrevervse (irmp_data_p->command, NEC_COMMAND_LEN);
 
-            irsnd_buffer[0] = (address & 0xFF00) >> 8;                                                          // AAAAAAAA
-            irsnd_buffer[1] = (address & 0x00FF);                                                               // AAAAAAAA
-            irsnd_buffer[2] = (command & 0xFF00) >> 8;                                                          // CCCCCCCC
-            irsnd_buffer[3] = ~((command & 0xFF00) >> 8);                                                       // cccccccc
-            irsnd_busy      = TRUE;
+                irsnd_buffer[0] = (address & 0xFF00) >> 8;                                              // AAAAAAAA
+                irsnd_buffer[1] = (address & 0x00FF);                                                   // AAAAAAAA
+                irsnd_buffer[2] = (command & 0xFF00) >> 8;                                              // CCCCCCCC
+                irsnd_buffer[3] = ~((command & 0xFF00) >> 8);                                           // cccccccc
+            }
+            irsnd_busy = TRUE;
             break;
         }
         case IRMP_ONKYO_PROTOCOL:
@@ -1187,6 +1212,16 @@ irsnd_send_data (IRMP_DATA * irmp_data_p, uint8_t do_wait)
             irsnd_buffer[3] = ((~address & 0x0003) << 6) | ( (command & 0x00FC) >> 2);                          // aaCCCCCC
             irsnd_buffer[4] = ( (command & 0x0003) << 6) | ((~command & 0x00FC) >> 2);                          // CCcccccc
             irsnd_buffer[5] = ((~command & 0x0003) << 6);                                                       // cc
+            irsnd_busy      = TRUE;
+            break;
+        }
+#endif
+#if IRSND_SUPPORT_MELINERA_PROTOCOL == 1
+        case IRMP_MELINERA_PROTOCOL:
+        {
+            command = irmp_data_p->command;
+
+            irsnd_buffer[0] = (command & 0x00FF);                                                               // CCCCCCCC
             irsnd_busy      = TRUE;
             break;
         }
@@ -1714,7 +1749,7 @@ irsnd_send_data (IRMP_DATA * irmp_data_p, uint8_t do_wait)
     initIRTimerForSend(); // Setup timer and interrupts for sending
     if (do_wait) {
         while (irsnd_busy) {
-            // do nothing;
+            // Wait for frame and leading space to be sent;
         }
     }
 #endif
@@ -1740,7 +1775,7 @@ uint8_t
 #endif
 irsnd_ISR (void)
 {
-    static uint8_t              send_trailer                    = FALSE;
+    static uint8_t              send_trailer                    = FALSE;    // if TRUE, we send the trailing space as defined in repeat_frame_pause_len
     static uint8_t              current_bit                     = 0xFF;
     static uint8_t              pulse_counter                   = 0;
     static IRSND_PAUSE_LEN      pause_counter                   = 0;
@@ -1753,14 +1788,14 @@ irsnd_ISR (void)
     static uint8_t              has_stop_bit                    = 0;
     static uint8_t              new_frame                       = TRUE;
     static uint8_t              complete_data_len               = 0;
-    static uint8_t              n_repeat_frames                 = 0;                                // number of repetition frames
-    static uint8_t              n_auto_repetitions              = 0;                                // number of auto_repetitions
-    static uint8_t              auto_repetition_counter         = 0;                                // auto_repetition counter
-    static uint16_t             auto_repetition_pause_len       = 0;                                // pause before auto_repetition, uint16_t!
-    static uint16_t             auto_repetition_pause_counter   = 0;                                // pause before auto_repetition, uint16_t!
-    static uint8_t              repeat_counter                  = 0;                                // repeat counter
-    static uint16_t             repeat_frame_pause_len          = 0;                                // pause before repeat, uint16_t!
-    static uint16_t             packet_repeat_pause_counter     = 0;                                // pause before repeat, uint16_t!
+    static uint8_t              n_repeat_frames                 = 0;        // number of repetition frames
+    static uint8_t              n_auto_repetitions              = 0;        // number of auto_repetitions
+    static uint8_t              auto_repetition_counter         = 0;        // auto_repetition counter
+    static uint16_t             auto_repetition_pause_len       = 0;        // pause before auto_repetition, uint16_t!
+    static uint16_t             auto_repetition_pause_counter   = 0;        // pause before auto_repetition, uint16_t!
+    static uint8_t              repeat_counter                  = 0;        // repeat counter
+    static uint16_t             repeat_frame_pause_len          = 0;        // pause before repeat, uint16_t!
+    static uint16_t             packet_repeat_pause_counter     = 0;        // pause before repeat, uint16_t!
 #if IRSND_SUPPORT_BANG_OLUFSEN_PROTOCOL == 1
     static uint8_t              last_bit_value;
 #endif
@@ -1769,7 +1804,7 @@ irsnd_ISR (void)
 
     if (irsnd_busy)
     {
-        if (current_bit == 0xFF && new_frame)                                       // start of transmission...
+        if (current_bit == 0xFF && new_frame)                                               // start of transmission...
         {
             if (auto_repetition_counter > 0)
             {
@@ -1840,6 +1875,7 @@ irsnd_ISR (void)
             }
             else if (packet_repeat_pause_counter < repeat_frame_pause_len)
             {
+                // wait for trailing space/gap before stop/repeating
                 packet_repeat_pause_counter++;
 #ifdef ANALYZE
                 if (irsnd_is_on)
@@ -1857,7 +1893,7 @@ irsnd_ISR (void)
             {
                 if (send_trailer)
                 {
-                    irsnd_busy = FALSE;
+                    irsnd_busy = FALSE;     // Trailing space sent complete, stop sending
                     send_trailer = FALSE;
                     return irsnd_busy;
                 }
@@ -1895,11 +1931,12 @@ irsnd_ISR (void)
 #endif
 #if IRSND_SUPPORT_NEC_PROTOCOL == 1
                     case IRMP_NEC_PROTOCOL:
+                    case IRMP_NEC_REPETITION_PROTOCOL:
                     case IRMP_ONKYO_PROTOCOL:
                     {
                         startbit_pulse_len          = IRSND_NEC_START_BIT_PULSE_LEN;
 
-                        if (repeat_counter > 0)
+                        if (repeat_counter > 0 || irsnd_protocol == IRMP_NEC_REPETITION_PROTOCOL)
                         {
                             startbit_pause_len      = IRSND_NEC_REPEAT_START_BIT_PAUSE_LEN - 1;
                             complete_data_len       = 0;
@@ -1954,6 +1991,24 @@ irsnd_ISR (void)
                         n_auto_repetitions          = 1;                                                    // 1 frame
                         auto_repetition_pause_len   = 0;
                         repeat_frame_pause_len      = IRSND_NEC_FRAME_REPEAT_PAUSE_LEN;
+                        irsnd_set_freq (IRSND_FREQ_38_KHZ);
+                        break;
+                    }
+#endif
+#if IRSND_SUPPORT_MELINERA_PROTOCOL == 1
+                    case IRMP_MELINERA_PROTOCOL:
+                    {
+                        startbit_pulse_len          = IRSND_MELINERA_START_BIT_PULSE_LEN;
+                        startbit_pause_len          = IRSND_MELINERA_START_BIT_PAUSE_LEN - 1;
+                        pulse_1_len                 = IRSND_MELINERA_1_PULSE_LEN;
+                        pause_1_len                 = IRSND_MELINERA_1_PAUSE_LEN - 1;
+                        pulse_0_len                 = IRSND_MELINERA_0_PULSE_LEN;
+                        pause_0_len                 = IRSND_MELINERA_0_PAUSE_LEN - 1;
+                        has_stop_bit                = MELINERA_STOP_BIT;
+                        complete_data_len           = MELINERA_COMPLETE_DATA_LEN;
+                        n_auto_repetitions          = 1;                                                    // 1 frame
+                        auto_repetition_pause_len   = 0;
+                        repeat_frame_pause_len      = IRSND_MELINERA_FRAME_REPEAT_PAUSE_LEN;
                         irsnd_set_freq (IRSND_FREQ_38_KHZ);
                         break;
                     }
@@ -2613,7 +2668,7 @@ irsnd_ISR (void)
 #endif
                     default:
                     {
-                        irsnd_busy = FALSE;
+                        irsnd_busy = FALSE; // no enabled protocol is selected -> stop immediately
                         break;
                     }
                 }
@@ -2631,6 +2686,7 @@ irsnd_ISR (void)
 #endif
 #if IRSND_SUPPORT_NEC_PROTOCOL == 1
                 case IRMP_NEC_PROTOCOL:
+                case IRMP_NEC_REPETITION_PROTOCOL:
                 case IRMP_ONKYO_PROTOCOL:
 #endif
 #if IRSND_SUPPORT_NEC16_PROTOCOL == 1
@@ -2638,6 +2694,9 @@ irsnd_ISR (void)
 #endif
 #if IRSND_SUPPORT_NEC42_PROTOCOL == 1
                 case IRMP_NEC42_PROTOCOL:
+#endif
+#if IRSND_SUPPORT_MELINERA_PROTOCOL == 1
+                case IRMP_MELINERA_PROTOCOL:
 #endif
 #if IRSND_SUPPORT_LGAIR_PROTOCOL == 1
                 case IRMP_LGAIR_PROTOCOL:
@@ -2729,7 +2788,7 @@ irsnd_ISR (void)
     IRSND_SUPPORT_FDC_PROTOCOL == 1 || IRSND_SUPPORT_RCCAR_PROTOCOL == 1 || IRSND_SUPPORT_JVC_PROTOCOL == 1 || IRSND_SUPPORT_NIKON_PROTOCOL == 1 || \
     IRSND_SUPPORT_LEGO_PROTOCOL == 1 || IRSND_SUPPORT_THOMSON_PROTOCOL == 1 || IRSND_SUPPORT_ROOMBA_PROTOCOL == 1 || IRSND_SUPPORT_TELEFUNKEN_PROTOCOL == 1 || \
     IRSND_SUPPORT_PENTAX_PROTOCOL == 1 || IRSND_SUPPORT_ACP24_PROTOCOL == 1 || IRSND_SUPPORT_PANASONIC_PROTOCOL == 1 || IRSND_SUPPORT_BOSE_PROTOCOL == 1 || \
-    IRSND_SUPPORT_MITSU_HEAVY_PROTOCOL == 1 || IRSND_SUPPORT_IRMP16_PROTOCOL == 1
+    IRSND_SUPPORT_MITSU_HEAVY_PROTOCOL == 1 || IRSND_SUPPORT_IRMP16_PROTOCOL == 1 || IRSND_SUPPORT_MELINERA_PROTOCOL
                 {
                     if (pulse_counter == 0)
                     {
@@ -3125,10 +3184,14 @@ irsnd_ISR (void)
             }
         }
 
-        if (! irsnd_busy)
+        if (!irsnd_busy)
         {
+            /*
+             * Check if we are really finished or if we must send a repeat or a trailing space
+             */
             if (repeat_counter < n_repeat_frames)
             {
+                // repeat again
 #if IRSND_SUPPORT_FDC_PROTOCOL == 1
                 if (irsnd_protocol == IRMP_FDC_PROTOCOL)
                 {
@@ -3140,8 +3203,17 @@ irsnd_ISR (void)
             }
             else
             {
-                irsnd_busy = TRUE; //Rainer
-                send_trailer = TRUE;
+#if !defined(ARDUINO) // never send a trailing space for Arduino
+                if (!irsnd_suppress_trailer)
+                {
+                    /*
+                     * Switch to mode: send last trailing space
+                     */
+                    irsnd_busy = TRUE;
+                    send_trailer = TRUE;
+                }
+#endif
+                // cleanup for ending transmission
                 n_repeat_frames = 0;
                 repeat_counter = 0;
             }

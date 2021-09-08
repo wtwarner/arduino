@@ -41,7 +41,7 @@
  *
  * Platform     IR input    IR output   Tone
  * -----------------------------------------
- * DEFAULT/AVR  3           4           5
+ * DEFAULT/AVR  2           3           4
  * ATtinyX5     0           4           3
  * ATtin167     9           8           5 // Digispark pro number schema
  * ATtin167     3           2           7
@@ -96,8 +96,8 @@ void setup()
 
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL)
-    delay(2000); // To be able to connect Serial monitor after reset and before first printout
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217)
+    delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
 #endif
 #if defined(ESP8266)
     Serial.println(); // to separate it from the internal boot output
@@ -181,7 +181,7 @@ void loop()
 void IRSendWithDelay(uint16_t aCommand, uint16_t aDelayMillis)
 {
     irsnd_data.command = aCommand;
-    irsnd_send_data(&irsnd_data, true); // true = wait for frame to end. This stores timer state and restores it after sending
+    irsnd_send_data(&irsnd_data, true); // true = wait for frame and trailing space to end. This stores timer state and restores it after sending.
     irsnd_data_print(&Serial,&irsnd_data);
     delay(aDelayMillis);
 }

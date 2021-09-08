@@ -36,7 +36,7 @@
  * For debugging purposes. The timing test pin for some platforms is specified in the PinDefinitionsAndMore.h files included in each example.
  */
 //#define IRMP_MEASURE_TIMING
-//#define IRMP_TIMING_TEST_PIN <yourPinNumber>
+//#define IR_TIMING_TEST_PIN <yourPinNumber>
 //
 /*---------------------------------------------------------------------------------------------------------------------------------------------------
  * Enable dynamic pin configuration in contrast to the static one which is known at compile time and saves program memory and CPU cycles.
@@ -78,10 +78,8 @@
 #include "os_type.h"
 #include "c_types.h"
 
-#elif defined(ARDUINO_ARCH_MBED) // Arduino Nano 33 BLE
+#elif defined(ARDUINO_ARCH_MBED) // Arduino Nano 33 BLE + Sparkfun Apollo3
 #include "mbed.h"
-// F is undefined in mbed.h, so F() is unknown and leads to "'F' was not declared in this scope" errors. -> define it again.
-#define F(a) a
 
 #elif defined(ESP32)
 #elif defined(STM32F1xx) // for "Generic STM32F1 series" from "STM32 Boards (selected from submenu)" of Arduino Board manager
@@ -113,8 +111,8 @@ extern uint_fast8_t irmp_InputPin; // global variable to hold input pin number. 
 #  endif
 #endif
 
-#if !defined(IRMP_TIMING_TEST_PIN)              // Only for test purposes
-#define IRMP_TIMING_TEST_PIN        5
+#if !defined(IR_TIMING_TEST_PIN)              // Only for test purposes
+#define IR_TIMING_TEST_PIN        5
 #endif
 
 void irmp_init(uint_fast8_t aIrmpInputPin);
@@ -129,11 +127,6 @@ extern uint32_t irmp_last_change_micros;
 
 void irmp_result_print(Print *aSerial, IRMP_DATA *aIRMPDataPtr);
 void irmp_result_print(IRMP_DATA *aIRMPDataPtr);
-#  if defined(__AVR__)
-void irmp_debug_print(const __FlashStringHelper *aMessage, bool aDoShortOutput = true);
-#  else
-void irmp_debug_print(const char *aMessage, bool aDoShortOutput);
-#  endif
 
 void irmp_PCI_ISR(void);
 void initPCIInterrupt(void);

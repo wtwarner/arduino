@@ -134,6 +134,15 @@
 #define NEC_FRAME_REPEAT_PAUSE_LEN_MAX          (uint_fast16_t)(F_INTERRUPTS * 100.0e-3 * MAX_TOLERANCE_20 + 0.5)
 #endif
 
+#define MELINERA_0_PULSE_LEN_MIN                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_0_PULSE_TIME * MIN_TOLERANCE_30 + 0.5) - 1)
+#define MELINERA_0_PULSE_LEN_MAX                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_0_PULSE_TIME * MAX_TOLERANCE_30 + 0.5) + 1)
+#define MELINERA_0_PAUSE_LEN_MIN                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_0_PAUSE_TIME * MIN_TOLERANCE_30 + 0.5) - 1)
+#define MELINERA_0_PAUSE_LEN_MAX                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_0_PAUSE_TIME * MAX_TOLERANCE_30 + 0.5) + 1)
+#define MELINERA_1_PULSE_LEN_MIN                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_1_PULSE_TIME * MIN_TOLERANCE_30 + 0.5) - 1)
+#define MELINERA_1_PULSE_LEN_MAX                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_1_PULSE_TIME * MAX_TOLERANCE_30 + 0.5) + 1)
+#define MELINERA_1_PAUSE_LEN_MIN                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_1_PAUSE_TIME * MIN_TOLERANCE_30 + 0.5) - 1)
+#define MELINERA_1_PAUSE_LEN_MAX                ((uint_fast8_t)(F_INTERRUPTS * MELINERA_1_PAUSE_TIME * MAX_TOLERANCE_30 + 0.5) + 1)
+
 #define SAMSUNG_START_BIT_PULSE_LEN_MIN         ((uint_fast8_t)(F_INTERRUPTS * SAMSUNG_START_BIT_PULSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
 #define SAMSUNG_START_BIT_PULSE_LEN_MAX         ((uint_fast8_t)(F_INTERRUPTS * SAMSUNG_START_BIT_PULSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
 #define SAMSUNG_START_BIT_PAUSE_LEN_MIN         ((uint_fast8_t)(F_INTERRUPTS * SAMSUNG_START_BIT_PAUSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
@@ -367,14 +376,14 @@
 #define GRUNDIG_NOKIA_IR60_PRE_PAUSE_LEN_MIN    ((uint_fast8_t)(F_INTERRUPTS * GRUNDIG_NOKIA_IR60_PRE_PAUSE_TIME * MIN_TOLERANCE_20 + 0.5) + 1)
 #define GRUNDIG_NOKIA_IR60_PRE_PAUSE_LEN_MAX    ((uint_fast8_t)(F_INTERRUPTS * GRUNDIG_NOKIA_IR60_PRE_PAUSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
 
-#define SIEMENS_OR_RUWIDO_START_BIT_PULSE_LEN_MIN       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PULSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
-#define SIEMENS_OR_RUWIDO_START_BIT_PULSE_LEN_MAX       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PULSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
-#define SIEMENS_OR_RUWIDO_START_BIT_PAUSE_LEN_MIN       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PAUSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
-#define SIEMENS_OR_RUWIDO_START_BIT_PAUSE_LEN_MAX       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PAUSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
-#define SIEMENS_OR_RUWIDO_BIT_PULSE_LEN_MIN             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PULSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
-#define SIEMENS_OR_RUWIDO_BIT_PULSE_LEN_MAX             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PULSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
-#define SIEMENS_OR_RUWIDO_BIT_PAUSE_LEN_MIN             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PAUSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
-#define SIEMENS_OR_RUWIDO_BIT_PAUSE_LEN_MAX             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PAUSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
+#define SIEMENS_OR_RUWIDO_START_BIT_PULSE_LEN_MIN       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PULSE_TIME * MIN_TOLERANCE_00 + 0.5) - 1)
+#define SIEMENS_OR_RUWIDO_START_BIT_PULSE_LEN_MAX       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PULSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
+#define SIEMENS_OR_RUWIDO_START_BIT_PAUSE_LEN_MIN       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PAUSE_TIME * MIN_TOLERANCE_00 + 0.5) - 1)
+#define SIEMENS_OR_RUWIDO_START_BIT_PAUSE_LEN_MAX       ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_START_BIT_PAUSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
+#define SIEMENS_OR_RUWIDO_BIT_PULSE_LEN_MIN             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PULSE_TIME * MIN_TOLERANCE_00 + 0.5) - 1)
+#define SIEMENS_OR_RUWIDO_BIT_PULSE_LEN_MAX             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PULSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
+#define SIEMENS_OR_RUWIDO_BIT_PAUSE_LEN_MIN             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PAUSE_TIME * MIN_TOLERANCE_00 + 0.5) - 1)
+#define SIEMENS_OR_RUWIDO_BIT_PAUSE_LEN_MAX             ((uint_fast8_t)(F_INTERRUPTS * SIEMENS_OR_RUWIDO_BIT_PAUSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
 
 #define FDC_START_BIT_PULSE_LEN_MIN             ((uint_fast8_t)(F_INTERRUPTS * FDC_START_BIT_PULSE_TIME * MIN_TOLERANCE_05 + 0.5) - 1)   // 5%: avoid conflict with NETBOX
 #define FDC_START_BIT_PULSE_LEN_MAX             ((uint_fast8_t)(F_INTERRUPTS * FDC_START_BIT_PULSE_TIME * MAX_TOLERANCE_05 + 0.5))
@@ -459,10 +468,10 @@
 #define LEGO_START_BIT_PAUSE_LEN_MAX            ((uint_fast8_t)(F_INTERRUPTS * LEGO_START_BIT_PAUSE_TIME * MAX_TOLERANCE_40 + 0.5) + 1)
 #define LEGO_PULSE_LEN_MIN                      ((uint_fast8_t)(F_INTERRUPTS * LEGO_PULSE_TIME * MIN_TOLERANCE_40 + 0.5) - 1)
 #define LEGO_PULSE_LEN_MAX                      ((uint_fast8_t)(F_INTERRUPTS * LEGO_PULSE_TIME * MAX_TOLERANCE_40 + 0.5) + 1)
-#define LEGO_1_PAUSE_LEN_MIN                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_1_PAUSE_TIME * MIN_TOLERANCE_40 + 0.5) - 1)
+#define LEGO_1_PAUSE_LEN_MIN                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_1_PAUSE_TIME * MIN_TOLERANCE_25 + 0.5) - 1)
 #define LEGO_1_PAUSE_LEN_MAX                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_1_PAUSE_TIME * MAX_TOLERANCE_40 + 0.5) + 1)
 #define LEGO_0_PAUSE_LEN_MIN                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_0_PAUSE_TIME * MIN_TOLERANCE_40 + 0.5) - 1)
-#define LEGO_0_PAUSE_LEN_MAX                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_0_PAUSE_TIME * MAX_TOLERANCE_40 + 0.5) + 1)
+#define LEGO_0_PAUSE_LEN_MAX                    ((uint_fast8_t)(F_INTERRUPTS * LEGO_0_PAUSE_TIME * MAX_TOLERANCE_30 + 0.5) + 1)
 
 #define IRMP16_START_BIT_PULSE_LEN_MIN          ((uint_fast8_t)(F_INTERRUPTS * IRMP16_START_BIT_PULSE_TIME * MIN_TOLERANCE_20 + 0.5) - 1)
 #define IRMP16_START_BIT_PULSE_LEN_MAX          ((uint_fast8_t)(F_INTERRUPTS * IRMP16_START_BIT_PULSE_TIME * MAX_TOLERANCE_20 + 0.5) + 1)
@@ -647,8 +656,7 @@
 #define RF_MEDION_0_PAUSE_LEN_MIN               ((uint_fast8_t)(F_INTERRUPTS * RF_MEDION_0_PAUSE_TIME * MIN_TOLERANCE_10 + 0.5) - 1)
 #define RF_MEDION_0_PAUSE_LEN_MAX               ((uint_fast8_t)(F_INTERRUPTS * RF_MEDION_0_PAUSE_TIME * MAX_TOLERANCE_10 + 0.5) + 1)
 
-#define AUTO_FRAME_REPETITION_LEN               (uint_fast16_t)(F_INTERRUPTS * AUTO_FRAME_REPETITION_TIME + 0.5)
-// use uint_fast16_t!
+#define AUTO_FRAME_REPETITION_LEN               (uint_fast16_t)(F_INTERRUPTS * AUTO_FRAME_REPETITION_TIME + 0.5)        // use uint_fast16_t!
 
 #define STOP_BIT_PAUSE_TIME_MIN                 3000.0e-6                                                               // minimum stop bit pause time: 3.0 msec
 #define STOP_BIT_PAUSE_LEN_MIN                  ((uint_fast8_t)(F_INTERRUPTS * STOP_BIT_PAUSE_TIME_MIN + 0.5) + 1)      // minimum stop bit pause len
@@ -1193,6 +1201,7 @@ static const PROGMEM IRMP_PARAMETER nec42_param =
 #endif
 
 #if IRMP_SUPPORT_LGAIR_PROTOCOL == 1
+#if 0 // not needed, switching from NEC
 
 static const PROGMEM IRMP_PARAMETER lgair_param =
 {
@@ -1215,6 +1224,7 @@ static const PROGMEM IRMP_PARAMETER lgair_param =
     NEC_FLAGS                                                           // flags:           some flags
 };
 
+#endif // 0 not needed, switching from NEC
 #endif
 
 #if IRMP_SUPPORT_SAMSUNG_PROTOCOL == 1
@@ -2654,9 +2664,6 @@ irmp_get_data (IRMP_DATA * irmp_data_p)
             irmp_data_p->address  = irmp_address;
             irmp_data_p->command  = irmp_command;
             irmp_data_p->flags    = irmp_flags;
-#if IRMP_SUPPORT_MERLIN_PROTOCOL == 1
-            irmp_data_p->flags   |= cmd_len;
-#endif
         }
         else
         {
@@ -2697,6 +2704,10 @@ static uint_fast16_t irmp_tmp_command2;                                     // i
 #if IRMP_SUPPORT_LGAIR_PROTOCOL == 1
 static uint_fast16_t irmp_lgair_address;                                    // ir address
 static uint_fast16_t irmp_lgair_command;                                    // ir command
+#endif
+
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+static uint_fast16_t irmp_melinera_command;                                 // ir command
 #endif
 
 #if IRMP_SUPPORT_SAMSUNG_PROTOCOL == 1
@@ -2868,6 +2879,14 @@ irmp_store_bit (uint_fast8_t value)
     // NO else!
 #endif
 
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+    if (irmp_param.protocol == IRMP_NEC_PROTOCOL || irmp_param.protocol == IRMP_NEC42_PROTOCOL || irmp_param.protocol == IRMP_MELINERA_PROTOCOL)
+    {
+        irmp_melinera_command <<= 1;                                                                        // MELINERA uses MSB
+        irmp_melinera_command |= value;
+    }
+#endif
+
 #if IRMP_SUPPORT_NEC42_PROTOCOL == 1
     if (irmp_param.protocol == IRMP_NEC42_PROTOCOL && irmp_bit >= 13 && irmp_bit < 26)
     {
@@ -3020,16 +3039,16 @@ static uint32_t s_startBitSample = 0;
  * 4 us idle, 45 us at start of each pulse @16 MHz ATmega 328p
  */
 #if defined(ESP8266)
-bool ICACHE_RAM_ATTR irmp_ISR(void)
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-bool IRAM_ATTR irmp_ISR(void)
-#else
-#  ifdef __cplusplus
-bool irmp_ISR(void)
-#  else
-uint_fast8_t irmp_ISR(void)
-#  endif
+IRAM_ATTR
 #endif
+#ifdef __cplusplus
+bool irmp_ISR(void)
+#else
+uint_fast8_t irmp_ISR(void)
+#endif
+
 {
     static uint_fast16_t    last_irmp_address = 0xFFFF;                             // save last irmp address to recognize key repetition
 #if IRMP_ENABLE_RELEASE_DETECTION == 1
@@ -3129,6 +3148,9 @@ uint_fast8_t irmp_ISR(void)
 #if IRMP_SUPPORT_LGAIR_PROTOCOL == 1
                     irmp_lgair_command      = 0;
                     irmp_lgair_address      = 0;
+#endif
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+                    irmp_melinera_command   = 0;
 #endif
                     irmp_bit                = 0xff;
                     irmp_pause_time         = 1;                                // 1st pause: set to 1, not to 0!
@@ -3346,9 +3368,9 @@ uint_fast8_t irmp_ISR(void)
                     if (irmp_pulse_time >= NIKON_START_BIT_PULSE_LEN_MIN && irmp_pulse_time <= NIKON_START_BIT_PULSE_LEN_MAX &&
                         irmp_pause_time >= NIKON_START_BIT_PAUSE_LEN_MIN && irmp_pause_time <= NIKON_START_BIT_PAUSE_LEN_MAX)
                     {
-                        ANALYZE_PRINTF5 ("protocol = NIKON, start bit timings: pulse: %3d - %3d, pause: %3d - %3d\n",
+                        ANALYZE_PRINTF5 ("protocol = NIKON, start bit timings: pulse: %3d - %3d, pause: %3u - %3u\n",
                                         NIKON_START_BIT_PULSE_LEN_MIN, NIKON_START_BIT_PULSE_LEN_MAX,
-                                        NIKON_START_BIT_PAUSE_LEN_MIN, NIKON_START_BIT_PAUSE_LEN_MAX);
+                                        (unsigned int) NIKON_START_BIT_PAUSE_LEN_MIN, (unsigned int) NIKON_START_BIT_PAUSE_LEN_MAX);
                         irmp_param_p = (IRMP_PARAMETER *) &nikon_param;
                     }
                     else
@@ -4088,7 +4110,16 @@ uint_fast8_t irmp_ISR(void)
                             if (! (irmp_param.flags & IRMP_PARAM_FLAG_IS_MANCHESTER))
                             {
                                 ANALYZE_PRINTF1 ("stop bit detected\n");
+
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+                                if (irmp_param.protocol == IRMP_MELINERA_PROTOCOL)
+                                {
+                                    irmp_tmp_command = irmp_melinera_command;  // set command
+                                    irmp_tmp_address = 0;                      // no address
+                                }
+#endif
                             }
+
                             irmp_param.stop_bit = 0;
                         }
                         else
@@ -4272,8 +4303,8 @@ uint_fast8_t irmp_ISR(void)
                             }
                             else
                             {
-                                ANALYZE_PRINTF3 ("ignoring NEC repetition frame: timeout occured, key_repetition_len = %d > %d\n",
-                                                key_repetition_len, NEC_FRAME_REPEAT_PAUSE_LEN_MAX);
+                                ANALYZE_PRINTF3 ("ignoring NEC repetition frame: timeout occured, key_repetition_len = %u > %u\n",
+                                                (unsigned int) key_repetition_len, (unsigned int) NEC_FRAME_REPEAT_PAUSE_LEN_MAX);
                                 irmp_ir_detected = FALSE;
                             }
                         }
@@ -4448,6 +4479,9 @@ uint_fast8_t irmp_ISR(void)
                                     irmp_param.complete_len += 2;
                                     irmp_store_bit(0);
                                     irmp_store_bit(1);
+                                    ANALYZE_PUTCHAR ('0');
+                                    ANALYZE_PUTCHAR ('1');
+                                    ANALYZE_NEWLINE ();
                                 }
                             }
                             else
@@ -4458,12 +4492,17 @@ uint_fast8_t irmp_ISR(void)
                                     {
                                         irmp_param.complete_len++;
                                         irmp_store_bit(0);
+                                        ANALYZE_PUTCHAR ('0');
+                                        ANALYZE_NEWLINE ();
                                     }
                                     else if (irmp_pulse_time >= 2 * irmp_param.pulse_1_len_min && irmp_pulse_time <= 2 * irmp_param.pulse_1_len_max)
                                     {
                                         irmp_param.complete_len += 2;
                                         irmp_store_bit(0);
                                         irmp_store_bit(1);
+                                        ANALYZE_PUTCHAR ('0');
+                                        ANALYZE_PUTCHAR ('1');
+                                        ANALYZE_NEWLINE ();
                                     }
                                 }
                             }
@@ -4933,6 +4972,51 @@ uint_fast8_t irmp_ISR(void)
                     }
                     else
 #endif // IRMP_SUPPORT_KATHREIN_PROTOCOL
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+#if IRMP_SUPPORT_NEC42_PROTOCOL == 1
+                    if (irmp_param.protocol == IRMP_NEC42_PROTOCOL &&
+#else // IRMP_SUPPORT_NEC_PROTOCOL instead
+                    if (irmp_param.protocol == IRMP_NEC_PROTOCOL &&
+#endif // IRMP_SUPPORT_NEC42_PROTOCOL == 1
+                       (
+                        (irmp_pulse_time >= MELINERA_0_PULSE_LEN_MIN && irmp_pulse_time <= MELINERA_0_PULSE_LEN_MAX &&
+                         irmp_pause_time >= MELINERA_0_PAUSE_LEN_MIN && irmp_pause_time <= MELINERA_0_PAUSE_LEN_MAX) ||
+                        (irmp_pulse_time >= MELINERA_1_PULSE_LEN_MIN && irmp_pulse_time <= MELINERA_1_PULSE_LEN_MAX &&
+                         irmp_pause_time >= MELINERA_1_PAUSE_LEN_MIN && irmp_pause_time <= MELINERA_1_PAUSE_LEN_MAX)
+                       ))
+                    {
+                        ANALYZE_PRINTF1 ("Switching to MELINERA protocol ");
+                        irmp_param.protocol         = IRMP_MELINERA_PROTOCOL;
+                        irmp_param.pulse_0_len_min  = MELINERA_0_PULSE_LEN_MIN;
+                        irmp_param.pulse_0_len_max  = MELINERA_0_PULSE_LEN_MAX;
+                        irmp_param.pause_0_len_min  = MELINERA_0_PAUSE_LEN_MIN;
+                        irmp_param.pulse_0_len_max  = MELINERA_0_PAUSE_LEN_MAX;
+                        irmp_param.pulse_1_len_min  = MELINERA_1_PULSE_LEN_MIN;
+                        irmp_param.pulse_1_len_max  = MELINERA_1_PULSE_LEN_MAX;
+                        irmp_param.pause_1_len_min  = MELINERA_1_PAUSE_LEN_MIN;
+                        irmp_param.pulse_1_len_max  = MELINERA_1_PAUSE_LEN_MAX;
+                        irmp_param.address_offset   = MELINERA_ADDRESS_OFFSET;
+                        irmp_param.address_end      = MELINERA_ADDRESS_OFFSET + MELINERA_ADDRESS_LEN;
+                        irmp_param.command_offset   = MELINERA_COMMAND_OFFSET;
+                        irmp_param.command_end      = MELINERA_COMMAND_OFFSET + MELINERA_COMMAND_LEN;
+                        irmp_param.complete_len     = MELINERA_COMPLETE_DATA_LEN;
+
+                        if (irmp_pause_time >= MELINERA_0_PAUSE_LEN_MIN && irmp_pause_time <= MELINERA_0_PAUSE_LEN_MAX)
+                        {
+                            ANALYZE_PUTCHAR ('0');
+                            irmp_store_bit (0);
+                        }
+                        else
+                        {
+                            ANALYZE_PUTCHAR ('1');
+                            irmp_store_bit (1);
+                        }
+
+                        ANALYZE_NEWLINE ();
+                        wait_for_space = 0;
+                    }
+                    else
+#endif // IRMP_SUPPORT_MELINERA_PROTOCOL
                     {                                                               // timing incorrect!
                         ANALYZE_PRINTF4 ("error 3: timing not correct: data bit %d,  pulse: %d, pause: %d\n", irmp_bit, irmp_pulse_time, irmp_pause_time);
                         ANALYZE_ONLY_NORMAL_PUTCHAR ('\n');
@@ -4984,8 +5068,8 @@ uint_fast8_t irmp_ISR(void)
                 // if SIRCS protocol and the code will be repeated within 50 ms, we will ignore 2nd and 3rd repetition frame
                 if (irmp_param.protocol == IRMP_SIRCS_PROTOCOL && (repetition_frame_number == 1 || repetition_frame_number == 2))
                 {
-                    ANALYZE_PRINTF4 ("code skipped: SIRCS auto repetition frame #%d, counter = %d, auto repetition len = %d\n",
-                                    repetition_frame_number + 1, key_repetition_len, AUTO_FRAME_REPETITION_LEN);
+                    ANALYZE_PRINTF4 ("code skipped: SIRCS auto repetition frame #%d, counter = %u, auto repetition len = %u\n",
+                                    repetition_frame_number + 1, (unsigned int) key_repetition_len, (unsigned int) AUTO_FRAME_REPETITION_LEN);
                     key_repetition_len = 0;
                 }
                 else
@@ -5028,8 +5112,8 @@ uint_fast8_t irmp_ISR(void)
                 // if NUBERT protocol and the code will be repeated within 50 ms, we will ignore every 2nd frame
                 if (irmp_param.protocol == IRMP_NUBERT_PROTOCOL && (repetition_frame_number & 0x01))
                 {
-                    ANALYZE_PRINTF4 ("code skipped: NUBERT auto repetition frame #%d, counter = %d, auto repetition len = %d\n",
-                                    repetition_frame_number + 1, key_repetition_len, AUTO_FRAME_REPETITION_LEN);
+                    ANALYZE_PRINTF4 ("code skipped: NUBERT auto repetition frame #%d, counter = %u, auto repetition len = %u\n",
+                                    repetition_frame_number + 1, (unsigned int) key_repetition_len, (unsigned int) AUTO_FRAME_REPETITION_LEN);
                     key_repetition_len = 0;
                 }
                 else
@@ -5039,8 +5123,8 @@ uint_fast8_t irmp_ISR(void)
                 // if SPEAKER protocol and the code will be repeated within 50 ms, we will ignore every 2nd frame
                 if (irmp_param.protocol == IRMP_SPEAKER_PROTOCOL && (repetition_frame_number & 0x01))
                 {
-                    ANALYZE_PRINTF4 ("code skipped: SPEAKER auto repetition frame #%d, counter = %d, auto repetition len = %d\n",
-                                    repetition_frame_number + 1, key_repetition_len, AUTO_FRAME_REPETITION_LEN);
+                    ANALYZE_PRINTF4 ("code skipped: SPEAKER auto repetition frame #%d, counter = %u, auto repetition len = %u\n",
+                                    repetition_frame_number + 1, (unsigned int) key_repetition_len, (unsigned int) AUTO_FRAME_REPETITION_LEN);
                     key_repetition_len = 0;
                 }
                 else
@@ -5116,7 +5200,7 @@ uint_fast8_t irmp_ISR(void)
                         {
                             if (key_repetition_len < NEC_FRAME_REPEAT_PAUSE_LEN_MAX)
                             {
-                                ANALYZE_PRINTF2 ("Detected NEC repetition frame, key_repetition_len = %d\n", key_repetition_len);
+                                ANALYZE_PRINTF2 ("Detected NEC repetition frame, key_repetition_len = %u\n", (unsigned int) key_repetition_len);
                                 ANALYZE_ONLY_NORMAL_PRINTF1("REPETETION FRAME                ");
                                 irmp_tmp_address = last_irmp_address;                   // address is last address
                                 irmp_tmp_command = last_irmp_command;                   // command is last command
@@ -5125,8 +5209,8 @@ uint_fast8_t irmp_ISR(void)
                             }
                             else
                             {
-                                ANALYZE_PRINTF3 ("Detected NEC repetition frame, ignoring it: timeout occured, key_repetition_len = %d > %d\n",
-                                                key_repetition_len, NEC_FRAME_REPEAT_PAUSE_LEN_MAX);
+                                ANALYZE_PRINTF3 ("Detected NEC repetition frame, ignoring it: timeout occured, key_repetition_len = %u > %u\n",
+                                                (unsigned int) key_repetition_len, (unsigned int) NEC_FRAME_REPEAT_PAUSE_LEN_MAX);
                                 irmp_ir_detected = FALSE;
                             }
                         }

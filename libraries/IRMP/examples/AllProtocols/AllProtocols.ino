@@ -29,16 +29,14 @@
  */
 
 /*
- * Comment out the type of LCD you use
+ * Activate the type of LCD you use
  */
 //#define USE_PARALELL_LCD
-//#define USE_SERIAL_LCD
+#define USE_SERIAL_LCD
 /*
  * Define the size of your LCD
  */
-#if !defined(USE_SERIAL_LCD)
 #define USE_1602_LCD
-#endif
 //#define USE_2004_LCD
 
 /*
@@ -100,7 +98,7 @@ LiquidCrystal_I2C myLCD(0x27, LCD_COLUMNS, LCD_ROWS);  // set the LCD address to
 LiquidCrystal myLCD(4, 5, 6, 7, 8, 9);
 #endif
 
-#if defined(__AVR__) && (! defined(__AVR_ATmega4809__))
+#if defined(__AVR__) && !(defined(__AVR_ATmega4809__) || defined(__AVR_ATtiny1616__)  || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__))
 // For cyclically display of VCC
 #include "ADCUtils.h"
 #define MILLIS_BETWEEN_VOLTAGE_PRINT 5000
@@ -111,15 +109,16 @@ void irmp_result_print_LCD();
 
 bool volatile sIRMPDataAvailable = false;
 
-#if defined(__AVR__) && (! defined(__AVR_ATmega4809__))
+#if defined(__AVR__) && !(defined(__AVR_ATmega4809__) || defined(__AVR_ATtiny1616__)  || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__))
 uint32_t volatile sMillisOfLastVoltagePrint;
 #endif
 
 void setup()
 {
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL)
-    delay(2000); // To be able to connect Serial monitor after reset and before first printout
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217) \
+    || defined(__AVR_ATtiny1616__)  || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__)
+    delay(4000); // To be able to connect Serial monitor after reset or power on and before first printout
 #endif
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRMP));
@@ -136,7 +135,7 @@ void setup()
     Serial.println(F("at pin " STR(IRMP_INPUT_PIN)));
 #endif
 
-#if defined(__AVR__) && (! defined(__AVR_ATmega4809__))
+#if defined(__AVR__) && !(defined(__AVR_ATmega4809__) || defined(__AVR_ATtiny1616__)  || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__))
     getVCCVoltageMillivoltSimple(); // to initialize ADC mux and reference
 #endif
 
@@ -179,7 +178,7 @@ void loop()
 #endif
     }
 
-#if defined(__AVR__) && (! defined(__AVR_ATmega4809__))
+#if defined(__AVR__) && defined(ADATE)
     /*
      * Periodically print VCC
      */
@@ -210,15 +209,14 @@ void loop()
  * In order to enable other interrupts you can call interrupts() (enable interrupt again) after getting data.
  */
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR handleReceivedIRData()
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR handleReceivedIRData()
-#else
-void handleReceivedIRData()
+IRAM_ATTR
 #endif
+void handleReceivedIRData()
 {
 
-#if defined(__AVR__) && (! defined(__AVR_ATmega4809__))
+#if defined(__AVR__) && defined(ADATE)
     // reset voltage display timer
     sMillisOfLastVoltagePrint = millis();
 #endif

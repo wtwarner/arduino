@@ -23,6 +23,7 @@
 #define _RTCLIB_H_
 
 #include <Arduino.h>
+#include <Wire.h>
 class TimeSpan;
 
 /** Registers */
@@ -78,6 +79,7 @@ class TimeSpan;
     inclusive.
 */
 /**************************************************************************/
+
 class DateTime {
 public:
   DateTime(uint32_t t = SECONDS_FROM_1970_TO_2000);
@@ -273,16 +275,19 @@ enum Ds1307SqwPinMode {
 /**************************************************************************/
 class RTC_DS1307 {
 public:
-  boolean begin(void);
-  static void adjust(const DateTime &dt);
+  boolean begin(TwoWire *wireInstance = &Wire);
+  void adjust(const DateTime &dt);
   uint8_t isrunning(void);
-  static DateTime now();
-  static Ds1307SqwPinMode readSqwPinMode();
-  static void writeSqwPinMode(Ds1307SqwPinMode mode);
+  DateTime now();
+  Ds1307SqwPinMode readSqwPinMode();
+  void writeSqwPinMode(Ds1307SqwPinMode mode);
   uint8_t readnvram(uint8_t address);
   void readnvram(uint8_t *buf, uint8_t size, uint8_t address);
   void writenvram(uint8_t address, uint8_t data);
   void writenvram(uint8_t address, uint8_t *buf, uint8_t size);
+
+protected:
+  TwoWire *RTCWireBus; ///< I2C bus connected to the RTC
 };
 
 /** DS3231 SQW pin mode settings */
@@ -325,12 +330,12 @@ enum Ds3231Alarm2Mode {
 /**************************************************************************/
 class RTC_DS3231 {
 public:
-  boolean begin(void);
-  static void adjust(const DateTime &dt);
+  boolean begin(TwoWire *wireInstance = &Wire);
+  void adjust(const DateTime &dt);
   bool lostPower(void);
-  static DateTime now();
-  static Ds3231SqwPinMode readSqwPinMode();
-  static void writeSqwPinMode(Ds3231SqwPinMode mode);
+  DateTime now();
+  Ds3231SqwPinMode readSqwPinMode();
+  void writeSqwPinMode(Ds3231SqwPinMode mode);
   bool setAlarm1(const DateTime &dt, Ds3231Alarm1Mode alarm_mode);
   bool setAlarm2(const DateTime &dt, Ds3231Alarm2Mode alarm_mode);
   void disableAlarm(uint8_t alarm_num);
@@ -339,10 +344,13 @@ public:
   void enable32K(void);
   void disable32K(void);
   bool isEnabled32K(void);
-  static float getTemperature(); // in Celcius degree
+  float getTemperature(); // in Celsius degree
 
-  static bool RTC_DS3231::setUserBytes(const uint8_t *bytes, int num_bytes);
-  static bool RTC_DS3231::getUserBytes(uint8_t *bytes, int num_bytes);
+  bool setUserBytes(const uint8_t *bytes, int num_bytes);
+  bool getUserBytes(uint8_t *bytes, int num_bytes);
+
+protected:
+  TwoWire *RTCWireBus; ///< I2C bus connected to the RTC
 };
 
 /** PCF8523 INT/SQW pin mode settings */
@@ -393,11 +401,11 @@ enum Pcf8523OffsetMode {
 /**************************************************************************/
 class RTC_PCF8523 {
 public:
-  boolean begin(void);
+  boolean begin(TwoWire *wireInstance = &Wire);
   void adjust(const DateTime &dt);
   boolean lostPower(void);
   boolean initialized(void);
-  static DateTime now();
+  DateTime now();
   void start(void);
   void stop(void);
   uint8_t isrunning();
@@ -411,6 +419,9 @@ public:
   void disableCountdownTimer(void);
   void deconfigureAllTimers(void);
   void calibrate(Pcf8523OffsetMode mode, int8_t offset);
+
+protected:
+  TwoWire *RTCWireBus; ///< I2C bus connected to the RTC
 };
 
 /** PCF8563 CLKOUT pin mode settings */
@@ -430,15 +441,18 @@ enum Pcf8563SqwPinMode {
 
 class RTC_PCF8563 {
 public:
-  boolean begin(void);
+  boolean begin(TwoWire *wireInstance = &Wire);
   boolean lostPower(void);
   void adjust(const DateTime &dt);
-  static DateTime now();
+  DateTime now();
   void start(void);
   void stop(void);
   uint8_t isrunning();
   Pcf8563SqwPinMode readSqwPinMode();
   void writeSqwPinMode(Pcf8563SqwPinMode mode);
+
+protected:
+  TwoWire *RTCWireBus; ///< I2C bus connected to the RTC
 };
 
 /**************************************************************************/
@@ -453,15 +467,27 @@ public:
       @brief  Start the RTC
       @param dt DateTime object with the date/time to set
   */
-  static void begin(const DateTime &dt) { adjust(dt); }
-  static void adjust(const DateTime &dt);
-  static DateTime now();
+  void begin(const DateTime &dt) { adjust(dt); }
+  void adjust(const DateTime &dt);
+  DateTime now();
 
 protected:
-  static uint32_t lastUnix;   ///< Unix time from the previous call to now() -
-                              ///< prevents rollover issues
-  static uint32_t lastMillis; ///< the millis() value corresponding to the last
-                              ///< **full second** of Unix time
+  /*!
+      Unix time from the previous call to now().
+
+      This, together with `lastMillis`, defines the alignment between
+      the `millis()` timescale and the Unix timescale. Both variables
+      are updated on each call to now(), which prevents rollover issues.
+  */
+  uint32_t lastUnix;
+  /*!
+      `millis()` value corresponding `lastUnix`.
+
+      Note that this is **not** the `millis()` value of the last call to
+      now(): it's the `millis()` value corresponding to the last **full
+      second** of Unix time preceding the last call to now().
+  */
+  uint32_t lastMillis;
 };
 
 /**************************************************************************/
@@ -479,18 +505,27 @@ public:
       @brief  Start the RTC
       @param dt DateTime object with the date/time to set
   */
-  static void begin(const DateTime &dt) { adjust(dt); }
-  static void adjust(const DateTime &dt);
-  static void adjustDrift(int ppm);
-  static DateTime now();
+  void begin(const DateTime &dt) { adjust(dt); }
+  void adjust(const DateTime &dt);
+  void adjustDrift(int ppm);
+  DateTime now();
 
 protected:
-  static uint32_t microsPerSecond; ///< Number of microseconds reported by
-                                   ///< micros() per "true" (calibrated) second
-  static uint32_t lastUnix;   ///< Unix time from the previous call to now() -
-                              ///< prevents rollover issues
-  static uint32_t lastMicros; ///< micros() value corresponding to the last full
-                              ///< second of Unix time
+  /*!
+      Number of microseconds reported by `micros()` per "true"
+      (calibrated) second.
+  */
+  uint32_t microsPerSecond = 1000000;
+  /*!
+      Unix time from the previous call to now().
+
+      The timing logic is identical to RTC_Millis.
+  */
+  uint32_t lastUnix;
+  /*!
+      `micros()` value corresponding to `lastUnix`.
+  */
+  uint32_t lastMicros;
 };
 
 #endif // _RTCLIB_H_

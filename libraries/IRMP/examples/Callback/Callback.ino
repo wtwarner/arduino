@@ -63,11 +63,10 @@ void handleReceivedIRData();
 
 void setup()
 {
-    // initialize the digital pin as an output.
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL)
-    delay(2000); // To be able to connect Serial monitor after reset and before first printout
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217)
+    delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
 #endif
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRMP));
@@ -100,16 +99,16 @@ void loop()
  * In order to enable other interrupts you can call sei() (enable interrupt again) after getting data.
  */
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR handleReceivedIRData()
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR handleReceivedIRData()
-#else
-void handleReceivedIRData()
+IRAM_ATTR
 #endif
+void handleReceivedIRData()
 {
     irmp_get_data(&irmp_data);
-    interrupts();
-    // Enable interrupts
+#if !defined(ARDUINO_ARCH_MBED)
+    interrupts(); // enable interrupts
+#endif
 
     /*
      * Filter for commands from the WM010 IR Remote

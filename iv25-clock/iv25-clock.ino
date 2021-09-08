@@ -166,7 +166,7 @@ const int TUBE(uint8_t digit, uint8_t lo_hi) {
 }
 bool first_vfd_update = false;
 
-int test_mode = 0;
+int test_mode = 1;
 
 void do_ir()
 {
@@ -208,15 +208,15 @@ void do_ir()
               if (!ir_rep) ir_nums.push_back(9);
               break;
 
-          case IR_FUNCSTOP:
+          case IR_CHUP:
               ir_nums.clear();
               break;
 
-          case IR_STREPT:
+          case IR_200:
               if (!ir_rep && ir_nums.size() > 0) {
                   int val = 0;
                   for (int i = 0; i < ir_nums.size(); i ++) {
-                      val = val*10 + i;
+                      val = val*10 + ir_nums[i];
                   }
                   set_brightness(val);
                   ir_nums.clear();
@@ -268,7 +268,7 @@ void do_ir()
                   time_t utc = ds3231_get_unixtime();
                   time_t local = myTZ.toLocal(utc, &tcr);
                   Serial.print("Get time: ");
-                  printDateTime(local, tcr->abbrev);
+                  printDateTime(local, tcr->abbrev);            
               }
               break;
               
@@ -279,11 +279,22 @@ void do_ir()
               set_brightness(max(0, g_state.st.brightness - 1));
               break;
 
+          case IR_CHDOWN: {
+                Serial.println(" i2c reset...");
+                int timeout=100;
+                while (-- timeout  && digitalRead(2) == 0) {
+                   digitalWrite(3, 0);
+                   digitalWrite(3, 1);
+                }
+                Serial.print("Done "); Serial.println(timeout);
+                break;
+           }
+
           case IR_EQ:
-              if (!ir_rep && ir_nums.size() > 1) {
+              if (!ir_rep && ir_nums.size() > 0) {
                   int val = 0;
                   for (int i = 0; i < ir_nums.size(); i ++) {
-                      val = val*10 + i;
+                      val = val*10 + ir_nums[i];
                   }
                   test_mode = val;
                   ir_nums.clear();
@@ -326,8 +337,8 @@ void time_to_vfd()
 
     memset(sdi_d, 0, sizeof(sdi_d));
 
-    int hr_tube0 = TUBE(hour(local_time), 0);
-    int hr_tube1 = TUBE(hour(local_time), 1);
+    int hr_tube0 = TUBE(hour(local_time) % 12, 0);
+    int hr_tube1 = TUBE(hour(local_time) % 12, 1);
     int min_tube0 = TUBE(minute(local_time) / 5, 0);
     int min_tube1 = TUBE(minute(local_time) / 5, 1);
 
@@ -357,13 +368,36 @@ void time_to_vfd()
 
     // second: flash remaining 10 segments' lowest
     for (int i = 0; i < 12; i ++) {
-        int sec_tube = TUBE(second(local_time), 0);
+        int sec_tube = TUBE(i, 0);
         if (sec_tube != hr_tube0 && sec_tube != min_tube0) {
             sdi_d[sec_tube] |= (second(local_time) & 1) << map_seg_to_bit[0];
         }
     }
     digitalWrite(PIN_LED, (second(local_time) & 1));
     update_vfd();
+}
+
+void do_test_vfd2()
+{
+    const time_t utc_time = ds3231_get_unixtime();
+    const time_t local_time = myTZ.toLocal(utc_time, &tcr);
+
+    memset(sdi_d, 0, sizeof(sdi_d));
+
+    int hr_tube0 = TUBE(0, 0);
+    int hr_tube1 = TUBE(0, 1);
+    int min_tube0 = TUBE(1, 0);
+    int min_tube1 = TUBE(1, 1);
+    int sec_tube0 = TUBE(2, 0);
+    int sec_tube1 = TUBE(2, 1);
+
+    sdi_d[(hour(local_time) % 12 / 7) ? hr_tube1 : hr_tube0] |= 1<<map_seg_to_bit[ hour(local_time) % 12 % 7 ];
+    sdi_d[(minute(local_time) / 7) ? min_tube1 : min_tube0] |= 1<<map_seg_to_bit[ minute(local_time) % 7 ];
+    sdi_d[(second(local_time) / 7) ? sec_tube1 : sec_tube0] |= 1<<map_seg_to_bit[ second(local_time) % 7 ];
+  
+    digitalWrite(PIN_LED, (second(local_time) & 1));
+    update_vfd();
+
 }
 
 void do_test_vfd() {
@@ -388,15 +422,20 @@ elapsedMillis vfd_timer;
 void loop() {
   do_ir();
 
-  if (vfd_timer >= 250) {
-      if (test_mode == 1) {
+  if (vfd_timer >= 500) {
+      if (test_mode == 0) {
+          time_to_vfd();
+      }
+      else if (test_mode == 1) {
+        const time_t utc_time = ds3231_get_unixtime();
           do_test_vfd();
       }
-      else {
-          time_to_vfd();
+      else if (test_mode == 2) {
+        do_test_vfd2();
       }
       vfd_timer = 0;
   }
+
 
   String bt_cmd;
   if (bt_loop(bt_cmd)) {
@@ -415,6 +454,7 @@ void loop() {
       }
 
   }
+
 }
 
 void printDateTime(time_t t, const char *tz) {

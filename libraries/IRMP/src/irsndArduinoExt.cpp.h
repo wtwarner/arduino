@@ -33,6 +33,7 @@ uint_fast8_t irsnd_output_pin;
 
 /*
  * Initialize, and activate feedback LED function
+ * @param aFeedbackLedPin - if 0 feedback function is disabled
  */
 void irsnd_init(uint_fast8_t aIrsndOutputPin, uint_fast8_t aFeedbackLedPin, bool aIrmpLedFeedbackPinIsActiveLow)
 {
@@ -46,14 +47,15 @@ void irsnd_init(uint_fast8_t aIrsndOutputPin, uint_fast8_t aFeedbackLedPin, bool
     irmp_irsnd_LEDFeedback(aFeedbackLedPin);
 
     // Do not call irsnd_init_and_store_timer() here, it is done at irsnd_send_data().
-    pinModeFast(IRSND_OUTPUT_PIN, OUTPUT);
+    pinMode(irsnd_output_pin, OUTPUT);
 #  ifdef IRMP_MEASURE_TIMING
-    pinModeFast(IRMP_TIMING_TEST_PIN, OUTPUT);
+    pinModeFast(IR_TIMING_TEST_PIN, OUTPUT);
 #  endif
 }
 
 /*
  * Initialize, and activate feedback LED function
+ * @param aFeedbackLedPin - if 0 feedback function is disabled
  */
 void irsnd_init(uint_fast8_t aIrsndOutputPin, uint_fast8_t aFeedbackLedPin)
 {
@@ -61,7 +63,7 @@ void irsnd_init(uint_fast8_t aIrsndOutputPin, uint_fast8_t aFeedbackLedPin)
 }
 
 /*
- * Initialize, but avoid activating feedback LED by using 0 as led pin
+ * Initialize, use  feedback LED by using 0 as led pin
  */
 void irsnd_init(uint_fast8_t aIrsndOutputPin)
 {
@@ -81,7 +83,7 @@ void irsnd_init(void)
     // Do not call irsnd_init_and_store_timer() here, it is done at irsnd_send_data().
     pinModeFast(IRSND_OUTPUT_PIN, OUTPUT);
 #  ifdef IRMP_MEASURE_TIMING
-    pinModeFast(IRMP_TIMING_TEST_PIN, OUTPUT);
+    pinModeFast(IR_TIMING_TEST_PIN, OUTPUT);
 #  endif
 }
 #endif // defined(IRMP_IRSND_ALLOW_DYNAMIC_PINS)
@@ -95,12 +97,11 @@ static void irsnd_set_freq(IRSND_FREQ_TYPE freq __attribute__((unused)))
  * Called from irsnd_ISR to set the IR output
  */
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR irsnd_on(void)
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR irsnd_on(void)
-#else
-void irsnd_on(void)
+IRAM_ATTR
 #endif
+void irsnd_on(void)
 {
     if (!irsnd_is_on)
     {
@@ -124,12 +125,11 @@ void irsnd_on(void)
 }
 
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR irsnd_off(void)
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR irsnd_off(void)
-#else
-void irsnd_off(void)
+IRAM_ATTR
 #endif
+void irsnd_off(void)
 {
     if (irsnd_is_on)
     {
@@ -336,6 +336,9 @@ const uint8_t irsnd_used_protocol_index[] PROGMEM =
 #if IRMP_SUPPORT_RF_MEDION_PROTOCOL == 1
     RF_MEDION_PROTOCOL
 #endif
+#if IRSND_SUPPORT_MELINERA_PROTOCOL == 1
+    IRMP_MELINERA_PROTOCOL
+#endif
 };
 
 const char * const irsnd_used_protocol_names[] PROGMEM =
@@ -511,12 +514,15 @@ const char * const irsnd_used_protocol_names[] PROGMEM =
 #if IRSND_SUPPORT_RF_MEDION_PROTOCOL == 1
     proto_rf_medion
 #endif
+#if IRSND_SUPPORT_MELINERA_PROTOCOL == 1
+    proto_melinera
+#endif
 };
 
 void irsnd_print_protocol_name(Print *aSerial, uint8_t aProtocolNumber)
 {
 #  if defined(__AVR__)
-    for (uint8_t i = 0; i < sizeof(irsnd_used_protocol_index); ++i)
+    for (uint_fast8_t i = 0; i < sizeof(irsnd_used_protocol_index); ++i)
     {
         if (pgm_read_byte(&irsnd_used_protocol_index[i]) == aProtocolNumber)
         {

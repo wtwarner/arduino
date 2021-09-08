@@ -59,9 +59,10 @@ time_t datetime_parse(const String &s) {
 }
 bool ds3231_setUserBytes(const uint8_t *bytes, int num_bytes)
 {
-    return rtc.setUserBytes(bytes, num_bytes);
+  Serial.print("setUserbytes "); Serial.println(num_bytes);
+  return rtc.setUserBytes(bytes, num_bytes);
 }
 bool ds3231_getUserBytes(uint8_t *bytes, int num_bytes)
 {
-    return rtc.getUserBytes(bytes, num_bytes);
+  return rtc.getUserBytes(bytes, num_bytes);
 }

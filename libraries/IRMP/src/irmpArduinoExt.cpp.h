@@ -46,7 +46,7 @@ void irmp_init(uint_fast8_t aIrmpInputPin, uint_fast8_t aFeedbackLedPin, bool aI
     initIRTimerForReceive();
 #  endif
 #  ifdef IRMP_MEASURE_TIMING
-    pinModeFast(IRMP_TIMING_TEST_PIN, OUTPUT);
+    pinModeFast(IR_TIMING_TEST_PIN, OUTPUT);
 #  endif
 }
 
@@ -86,7 +86,7 @@ void irmp_init(void)
     initIRTimerForReceive();
 #  endif
 #  ifdef IRMP_MEASURE_TIMING
-    pinModeFast(IRMP_TIMING_TEST_PIN, OUTPUT);
+    pinModeFast(IR_TIMING_TEST_PIN, OUTPUT);
 #  endif
 }
 
@@ -95,12 +95,11 @@ void irmp_init(void)
  * With -oS it is taken as inline function
  */
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR irmp_DoLEDFeedback(bool aSwitchLedOff)
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR irmp_DoLEDFeedback(bool aSwitchLedOff)
-#else
-void irmp_DoLEDFeedback(bool aSwitchLedOff)
+IRAM_ATTR
 #endif
+void irmp_DoLEDFeedback(bool aSwitchLedOff)
 {
     if (irmp_irsnd_LedFeedbackEnabled)
     {
@@ -120,48 +119,6 @@ bool irmp_IsBusy()
 #else
     return (irmp_start_bit_detected || irmp_pulse_time || key_repetition_len <= IRMP_KEY_REPETITION_LEN);
 #endif
-}
-
-#if defined(__AVR__)
-void irmp_debug_print(const __FlashStringHelper *aMessage, bool aDoShortOutput)
-#else
-void irmp_debug_print(const char *aMessage, bool aDoShortOutput)
-#endif
-{
-    Serial.print(aMessage);
-    Serial.print(' ');
-    Serial.print(irmp_ir_detected); // valid IR command detected
-    Serial.print(F(" St"));
-    Serial.print(irmp_start_bit_detected);
-
-    Serial.print(F(" Ws"));
-    Serial.print(wait_for_space); // true if in data/address section and no signal. Now increment pause time.
-    Serial.print(F(" Wss"));
-    Serial.print(wait_for_start_space); // true if we have received start bit
-
-    Serial.print(F(" L"));
-    Serial.print(irmp_param.complete_len); // maximum bit position
-    Serial.print(F(" B"));
-    Serial.print((int8_t) irmp_bit); // current bit position - FF(-1) is start value
-    Serial.print(F(" Pu"));
-    Serial.print(irmp_pulse_time); // bit time for pulse
-    Serial.print(F(" Pa"));
-    Serial.print(irmp_pause_time);
-
-    Serial.print(F(" Sb"));
-    Serial.print(irmp_param.stop_bit); // boolean. 1 = stop bit required
-
-    if (!aDoShortOutput)
-    {
-        Serial.print(F(" F"));
-        Serial.print(irmp_flags); // currently only repetition flag
-        Serial.print(F(" K"));
-        Serial.print(key_repetition_len); // the pause after a command to distinguish repetitions from new commands
-        Serial.print(F(" R"));
-        Serial.print(repetition_frame_number); // Number of repetitions
-    }
-
-    Serial.println();
 }
 
 /*
@@ -349,6 +306,9 @@ const uint8_t irmp_used_protocol_index[] PROGMEM =
 #if IRMP_SUPPORT_RF_MEDION_PROTOCOL == 1
     RF_MEDION_PROTOCOL
 #endif
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+    IRMP_MELINERA_PROTOCOL
+#endif
 };
 
 const char * const irmp_used_protocol_names[] PROGMEM =
@@ -527,12 +487,15 @@ const char * const irmp_used_protocol_names[] PROGMEM =
 #if IRMP_SUPPORT_RF_MEDION_PROTOCOL == 1
     proto_rf_medion
 #endif
+#if IRMP_SUPPORT_MELINERA_PROTOCOL == 1
+    proto_melinera
+#endif
 };
 
 void irmp_print_active_protocols(Print *aSerial)
 {
 // skip protocol 0 = UNKNOWN
-    for (uint8_t i = 1; i < sizeof(irmp_used_protocol_index); ++i)
+    for (uint_fast8_t i = 1; i < sizeof(irmp_used_protocol_index); ++i)
     {
 #if IRMP_PROTOCOL_NAMES == 1
         /*
@@ -563,23 +526,23 @@ void irmp_print_protocol_name(Print *aSerial, uint8_t aProtocolNumber)
 {
 #if IRMP_PROTOCOL_NAMES == 1
 #  if defined(__AVR__)
-    for (uint8_t i = 0; i < sizeof(irmp_used_protocol_index); ++i)
+    for (uint_fast8_t i = 0; i < sizeof(irmp_used_protocol_index); ++i)
     {
         if(pgm_read_byte(&irmp_used_protocol_index[i]) == aProtocolNumber)
         {
             const char* tProtocolStringPtr = (char*) pgm_read_word(&irmp_used_protocol_names[i]);
             aSerial->print((__FlashStringHelper *) (tProtocolStringPtr));
-            break;
+            return;
         }
     }
 #  else
     // no need to save space
     aSerial->print(irmp_protocol_names[aProtocolNumber]);
 #  endif
-#else
-    aSerial->print(F("0x"));
-    aSerial->print(aProtocolNumber, HEX);
 #endif
+    // append protocol number
+    aSerial->print(F(" | 0x"));
+    aSerial->print(aProtocolNumber, HEX);
 }
 
 /*
@@ -593,7 +556,6 @@ void irmp_result_print(Print *aSerial, IRMP_DATA *aIRMPDataPtr)
      */
     aSerial->print(F("P="));
     irmp_print_protocol_name(aSerial, aIRMPDataPtr->protocol);
-    aSerial->print(' ');
 
     /*
      * Print address, code and repetition flag
@@ -622,7 +584,6 @@ void irmp_result_print(IRMP_DATA *aIRMPDataPtr)
 // This is not the exact right condition, but on ATtinies you will mostly disable protocol names
 #if IRMP_PROTOCOL_NAMES == 1
     irmp_print_protocol_name(&Serial, aIRMPDataPtr->protocol);
-    Serial.print(' ');
 #else
     Serial.print(F("0x"));
     Serial.print(aIRMPDataPtr->protocol, HEX);

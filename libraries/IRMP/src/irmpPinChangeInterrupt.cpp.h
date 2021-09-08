@@ -27,6 +27,14 @@
 #ifndef IRMP_PIN_CHANGE_INTERRUPT_CPP_H
 #define IRMP_PIN_CHANGE_INTERRUPT_CPP_H
 
+//#define PCI_DEBUG
+
+#  if defined(__AVR__)
+void irmp_debug_print(const __FlashStringHelper *aMessage, bool aDoShortOutput = true);
+#  else
+void irmp_debug_print(const char *aMessage, bool aDoShortOutput);
+#  endif
+
 uint32_t irmp_last_change_micros; // microseconds of last Pin Change Interrupt. Used for irmp_IsBusy().
 /*
  * Wrapper for irmp_ISR() in order to run it with Pin Change Interrupts.
@@ -36,13 +44,11 @@ uint32_t irmp_last_change_micros; // microseconds of last Pin Change Interrupt. 
  */
 //#define PCI_DEBUG
 #if defined(ESP8266)
-void ICACHE_RAM_ATTR irmp_PCI_ISR(void)
+ICACHE_RAM_ATTR
 #elif defined(ESP32)
-void IRAM_ATTR irmp_PCI_ISR(void)
-#else
-void irmp_PCI_ISR(void)
+IRAM_ATTR
 #endif
-{
+void irmp_PCI_ISR(void) {
 
     // save IR input level - negative logic, true means inactive / IR pause
     uint_fast8_t irmp_input = input(IRMP_PIN);
@@ -60,8 +66,7 @@ void irmp_PCI_ISR(void)
 #error F_INTERRUPTS must be 15625 (to avoid a time consuming division)
 #endif
 
-    if (tTicks != 0)
-    {
+    if (tTicks != 0) {
         tTicks -= 1; // adjust for irmp_pulse_time / irmp_pause_time incremented in irmp_ISR()
     }
 
@@ -72,17 +77,11 @@ void irmp_PCI_ISR(void)
     {
         // start of pause -> just set pulse width
         irmp_pulse_time += tTicks;
-    }
-    else
-    {
-        if (irmp_start_bit_detected)
-        {
+    } else {
+        if (irmp_start_bit_detected) {
             irmp_pause_time += tTicks;
-        }
-        else
-        { // start pulse here -> set pause or time between repetitions
-            if (tTicks > 0xFFFF)
-            {
+        } else { // start pulse here -> set pause or time between repetitions
+            if (tTicks > 0xFFFF) {
                 // avoid overflow for 16 bit key_repetition_len
                 tTicks = 0xFFFF;
             }
@@ -95,8 +94,7 @@ void irmp_PCI_ISR(void)
      */
     irmp_ISR();
 
-    if (!irmp_ir_detected && irmp_input)
-    {
+    if (!irmp_ir_detected && irmp_input) {
         /*
          * No valid protocol detected and IR input is inactive now -> simulate end for protocols.
          * IRMP may be waiting for stop bit, but detects it only at the next call, so do one additional call.
@@ -109,8 +107,7 @@ void irmp_PCI_ISR(void)
             Serial.println(irmp_start_bit_detected); // print start bit if complete_len is reached
         }
 #endif
-        if (irmp_start_bit_detected && irmp_bit == irmp_param.complete_len && irmp_param.stop_bit == TRUE)
-        {
+        if (irmp_start_bit_detected && irmp_bit == irmp_param.complete_len && irmp_param.stop_bit == TRUE) {
             // Try to detect a nec repeat irmp_bit is 0
 #ifdef PCI_DEBUG
             irmp_debug_print(F("R"));
@@ -122,16 +119,14 @@ void irmp_PCI_ISR(void)
             irmp_debug_print(F("E")); // print info after call
             Serial.println();
 #endif
-            if (irmp_ir_detected)
-            {
+            if (irmp_ir_detected) {
                 // no protocol detected -> restore irmp_pause_time. Not sure if this is really required.
                 irmp_pause_time = irmp_pause_time_store;
             }
         }
 
         // For condition see also line 4203 and 5098 in irmp.c.h
-        if (irmp_start_bit_detected && irmp_bit > 0 && irmp_bit == irmp_param.complete_len)
-        {
+        if (irmp_start_bit_detected && irmp_bit > 0 && irmp_bit == irmp_param.complete_len) {
             // Complete length of bit now received -> try to detect end of protocol
 #ifdef PCI_DEBUG
             irmp_debug_print(F("S")); // print info before call
@@ -143,8 +138,7 @@ void irmp_PCI_ISR(void)
             irmp_debug_print(F("E")); // print info after call
             Serial.println();
 #endif
-            if (irmp_ir_detected)
-            {
+            if (irmp_ir_detected) {
                 // no protocol detected -> restore irmp_pause_time. Not sure if this is really required.
                 irmp_pause_time = irmp_pause_time_store;
             }
@@ -170,10 +164,13 @@ void irmp_PCI_ISR(void)
     }
 }
 
-void initPCIInterrupt()
-{
-#if ! defined(__AVR__) || defined(IRMP_USE_ARDUINO_ATTACH_INTERRUPT)
+void initPCIInterrupt() {
+#if defined(__AVR_ATtiny1616__)  || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__)
+    attachInterrupt(IRMP_INPUT_PIN, irmp_PCI_ISR, CHANGE); // 14.2 us before LED Feedback compared to 12 if configured with macros and less compatible
+
+#elif ! defined(__AVR__) || defined(IRMP_USE_ARDUINO_ATTACH_INTERRUPT)
     attachInterrupt(digitalPinToInterrupt(IRMP_INPUT_PIN), irmp_PCI_ISR, CHANGE);
+
 #else
 #  if defined(__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
     // use PinChangeInterrupt
@@ -248,38 +245,71 @@ void initPCIInterrupt()
 /*
  * Specify the right INT0, INT1 or PCINT0 interrupt vector according to different pins and cores
  */
-#if defined(__AVR__) && ! defined(IRMP_USE_ARDUINO_ATTACH_INTERRUPT)
-# if defined(__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
-ISR(PCINT0_vect)
-#  else
-#    if defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
-#      if defined(ARDUINO_AVR_DIGISPARKPRO)
-#        if (IRMP_INPUT_PIN == 3) //  PB6 / INT0 is connected to USB+ on DigisparkPro boards
-ISR(INT0_vect)
-#        endif
-#       if (IRMP_INPUT_PIN == 9)
-ISR(INT1_vect)
-#       endif
+#if defined(__AVR__) && !defined(IRMP_USE_ARDUINO_ATTACH_INTERRUPT)
+#  if (IRMP_INPUT_PIN == 2)
+ISR(INT0_vect) // Pin 2 global assignment
 
-#      else // defined(ARDUINO_AVR_DIGISPARKPRO)
-#        if (IRMP_INPUT_PIN == 14) // For AVR_ATtiny167 INT0 is on pin 14 / PB6
-ISR(INT0_vect)
-#        endif
-#      endif
-
-#    else // AVR_ATtiny167
-#    if (IRMP_INPUT_PIN == 2)
-ISR(INT0_vect)
-#      endif
-#    endif // AVR_ATtiny167
-
-#    if (IRMP_INPUT_PIN == 3) && !defined(ARDUINO_AVR_DIGISPARKPRO)
-ISR(INT1_vect)
+#  elif (IRMP_INPUT_PIN == 3)
+#    if  defined(ARDUINO_AVR_DIGISPARKPRO)
+ISR(INT0_vect) //  Pin 3 / PB6 / INT0 is connected to USB+ on DigisparkPro boards
+#    else
+ISR(INT1_vect) // Pin 3 global assignment
 #    endif
-#  endif // defined(__AVR_ATtiny25__)
+
+#  elif (IRMP_INPUT_PIN == 9) // Digispark pro
+ISR(INT1_vect)
+
+#  elif (IRMP_INPUT_PIN == 14) // For AVR_ATtiny167 INT0 is on pin 14 / PB6
+ISR(INT0_vect)
+#  elif (! defined(ISC10)) || ((defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)) && INT1_PIN != 3)
+// on ATtinyX5 we do not have a INT1_vect but we can use the PCINT0_vect
+ISR(PCINT0_vect)
+#  endif // (IRMP_INPUT_PIN == 2)
 {
     irmp_PCI_ISR();
 }
-#endif // defined(__AVR__)
+#endif // defined(__AVR__) && !defined(IRMP_USE_ARDUINO_ATTACH_INTERRUPT)
+
+#if defined(__AVR__)
+void irmp_debug_print(const __FlashStringHelper *aMessage, bool aDoShortOutput)
+#else
+void irmp_debug_print(const char *aMessage, bool aDoShortOutput)
+#endif
+{
+    Serial.print(aMessage);
+    Serial.print(' ');
+    Serial.print(irmp_ir_detected); // valid IR command detected
+    Serial.print(F(" St"));
+    Serial.print(irmp_start_bit_detected);
+
+    Serial.print(F(" Ws"));
+    Serial.print(wait_for_space); // true if in data/address section and no signal. Now increment pause time.
+    Serial.print(F(" Wss"));
+    Serial.print(wait_for_start_space); // true if we have received start bit
+
+    Serial.print(F(" L"));
+    Serial.print(irmp_param.complete_len); // maximum bit position
+    Serial.print(F(" B"));
+    Serial.print((int8_t) irmp_bit); // current bit position - FF(-1) is start value
+    Serial.print(F(" Pu"));
+    Serial.print(irmp_pulse_time); // bit time for pulse
+    Serial.print(F(" Pa"));
+    Serial.print(irmp_pause_time);
+
+    Serial.print(F(" Sb"));
+    Serial.print(irmp_param.stop_bit); // boolean. 1 = stop bit required
+
+    if (!aDoShortOutput)
+    {
+        Serial.print(F(" F"));
+        Serial.print(irmp_flags); // currently only repetition flag
+        Serial.print(F(" K"));
+        Serial.print(key_repetition_len); // the pause after a command to distinguish repetitions from new commands
+        Serial.print(F(" R"));
+        Serial.print(repetition_frame_number); // Number of repetitions
+    }
+
+    Serial.println();
+}
 
 #endif // IRMP_PIN_CHANGE_INTERRUPT_CPP_H
