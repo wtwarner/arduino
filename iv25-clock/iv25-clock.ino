@@ -60,7 +60,7 @@ struct nonvolatile_state_t {
         struct {
             uint8_t brightness; // 0..255
             uint8_t rotation; // 0..11
-            uint8_t reserved[Size-2];
+            uint8_t reserved[Size-3];
             uint8_t checksum;
         } st;
     };
@@ -154,6 +154,7 @@ void setup() {
   if (ds3231_getUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size())) {
       if (g_nv_state.validate_checksum()) {
           Serial.print("Get valid user state; b "); Serial.println(g_nv_state.st.brightness);
+          Serial.print("   rot "); Serial.println(g_nv_state.st.rotation);
       }
       else {
           Serial.println("Bad user state; re-init");
@@ -277,7 +278,7 @@ bool do_ir()
                   time_t new_local = makeTime(tm);
                   time_t new_utc = myTZ.toUTC(new_local);
                   Serial.print("Set time: ");
-                  printDateTime(new_utc, tcr->abbrev);
+                  printDateTime(new_local, tcr->abbrev);
                   ds3231_set(new_utc);
                   g_time_valid = true;
                   time_to_vfd();
@@ -314,7 +315,7 @@ bool do_ir()
       }
 
       // if a key other than a digit was entered, clear the accumulated number.
-      if (!ir_rep && ir_nums.size() != prev_ir_nums_size) {
+      if (!ir_rep && ir_nums.size() == prev_ir_nums_size) {
           ir_nums.clear();
       }
 
@@ -326,7 +327,7 @@ bool do_ir()
 
 void set_brightness(int b_) {
     uint8_t b = max(0, min(b_, 255));
-    analogWrite(PIN_OE_, 255 - b);
+    analogWrite(PIN_OE_, gamma8(255 - b));
     Serial.print("Set brightness: "); Serial.println(b);
     if (g_nv_state.st.brightness != b) {
         g_nv_state.st.brightness = b;
