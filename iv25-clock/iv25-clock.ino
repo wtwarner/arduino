@@ -65,8 +65,8 @@ struct nonvolatile_state_t {
     _( 1,      0,    0,       5,   3) /* brightness[7:5] - Alarm 1 minutes    */ \
     _( 1,      4,    1,       0,   2) /* rotation[1:0] - Alarm 1 10 minutes   */ \
     _( 2,      0,    1,       2,   2) /* rotation[2:2] - Alarm 1 Hour         */ \
-    _( 3,      0,    2,       0,   3) /* checksum[2:0] - Alarm 1 Date         */ \
-    _( 4,      0,    5,       3,   3) /* checksum[5:3] - Alarm 2 minutes      */ \
+    _( 3,      0,    7,       0,   3) /* checksum[2:0] - Alarm 1 Date         */ \
+    _( 4,      0,    7,       3,   3) /* checksum[5:3] - Alarm 2 minutes      */ \
     _( 4,      4,    7,       6,   2) /* checksum[7:6] - Alarm 2 10 minutes   */
     
     void pack()
@@ -338,11 +338,9 @@ bool do_ir()
               if (!ir_rep) {
                   uint8_t *b = g_nv_state.get_packed_bytes();
                   ds3231_getUserBytes(b, g_nv_state.get_packed_size());
-                  Serial.print(b[0], HEX); 
-                  Serial.print(b[1], HEX); 
-                  Serial.print(b[2], HEX); 
-                  Serial.print(b[3], HEX); 
-                  Serial.print(b[4], HEX); 
+                  char buf[24];
+                  sprintf(buf, "%02x.%02x.%02x.%02x.%02x.%02x.%02x", b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
+                  Serial.print(buf);
                   if (g_nv_state.validate_checksum()) {
                       Serial.print(". Get valid user state; b "); Serial.println(g_nv_state.st.brightness);
                       Serial.print("   rot "); Serial.println(g_nv_state.st.rotation);
