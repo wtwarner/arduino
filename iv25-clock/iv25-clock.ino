@@ -23,47 +23,93 @@ struct nonvolatile_state_t {
 
     void init()
     {
+        memset(unpackedBytes, 0, Size);
+        memset(packedBytes, 0, PackedSize);
         st.brightness = 255;
         st.rotation = 0;
-        for (int i=0; i < sizeof(st.reserved); i++) {
-            st.reserved[i] = 0;
-        }
         update_checksum();
     }
     
     void update_checksum() {
         st.checksum = 255;
-        for (int i=0; i < sizeof(bytes) - 1; i++) {
-            st.checksum += bytes[i];
+        for (int i=0; i < Size - 1; i++) {
+            st.checksum += unpackedBytes[i]; // modulo 8-bit sum
         }
     }
 
     bool validate_checksum() {
+        unpack();
         uint8_t sum = 255;
-        for (int i=0; i < sizeof(bytes) - 1; i++) {
-            sum += bytes[i];
+        for (int i=0; i < Size - 1; i++) {
+            sum += unpackedBytes[i]; // modulo 8-bit sum
         }
         return sum == st.checksum;
     }
 
-    uint8_t *get_bytes() {
+    uint8_t *get_packed_bytes() {
         update_checksum();
-        return bytes;
-    }
-    int get_size() {
-        return Size;
+        pack();
+        return packedBytes;
     }
 
-    static const int Size = 7;
+    // the packed fields below represent usable DS3231 fields in Alarm1/2.
+    // The DS3231 fields are BCD, so valid values of a 4-bit field is 0..9.
+    // Values > 9 could result in undefined behavior, so we restrict ourselves to use 3 bits.
+    //
+#   define LIST_PACKED_FIELDS(_)                                                 \
+    /* packed        unpacked                                                 */ \
+    /* byte    bit   byte     bit                                             */ \
+    /* offset, lsb,  offset,  lsb, width                                      */ \
+    _( 0,      0,    0,       0,   3) /* brightness[2:0] - Alarm 1 seconds    */ \
+    _( 0,      4,    0,       3,   2) /* brightness[4:3] - Alarm 1 10 seconds */ \
+    _( 1,      0,    0,       5,   3) /* brightness[7:5] - Alarm 1 minutes    */ \
+    _( 1,      4,    1,       0,   2) /* rotation[1:0] - Alarm 1 10 minutes   */ \
+    _( 2,      0,    1,       2,   2) /* rotation[2:2] - Alarm 1 Hour         */ \
+    _( 3,      0,    2,       0,   3) /* checksum[2:0] - Alarm 1 Date         */ \
+    _( 4,      0,    5,       3,   3) /* checksum[5:3] - Alarm 2 minutes      */ \
+    _( 4,      4,    7,       6,   2) /* checksum[7:6] - Alarm 2 10 minutes   */
+    
+    void pack()
+    {
+        memset(packedBytes, 0, PackedSize);
+#       define PACK_FIELD(p_off, p_lsb, up_off, up_lsb, width) \
+           packedBytes[p_off] |= ((unpackedBytes[up_off] >> up_lsb) & ((1 << width) - 1)) << p_lsb;
+
+        LIST_PACKED_FIELDS(PACK_FIELD)
+#       undef PACK_FIELD
+    }
+
+    void unpack()
+    {
+        memset(unpackedBytes, 0, Size);
+#       define UNPACK_FIELD(p_off, p_lsb, up_off, up_lsb, width) \
+           unpackedBytes[up_off] |= ((packedBytes[p_off] >> p_lsb) & ((1 << width) - 1)) << up_lsb;
+
+        LIST_PACKED_FIELDS(UNPACK_FIELD)
+#       undef UNPACK_FIELD
+    }
+
+#   undef LIST_PACKED_FIELDS
+    
+    int get_packed_size() const {
+        return PackedSize;
+    }
+
+    const static int Size = 8;
     union {
-        uint8_t bytes[Size];
+        uint8_t unpackedBytes[Size];
         struct {
             uint8_t brightness; // 0..255
             uint8_t rotation; // 0..11
-            uint8_t reserved[Size-3];
+            uint8_t reserved[Size - 2 - 1];
             uint8_t checksum;
         } st;
     };
+
+    // packed size is 7 bytes, which is the size of DS3231 Alarm1 + Alarm2 registers.
+    // However, not all the fields in them are used.
+    const static int PackedSize = 7;
+    uint8_t packedBytes[PackedSize];
 };
 
 template <int C,class T> class my_vector {
@@ -119,16 +165,16 @@ void setup() {
   delay(2000);
   Serial.println("Start");
   
- pinMode(PIN_LED, OUTPUT);
+  pinMode(PIN_LED, OUTPUT);
 
- pinMode(PIN_CLK, OUTPUT);
- pinMode(PIN_SDI, OUTPUT);
- pinMode(PIN_STROBE, OUTPUT);
- pinMode(PIN_OE_, OUTPUT);
- digitalWrite(PIN_CLK, 0);
- digitalWrite(PIN_SDI, 0);
- digitalWrite(PIN_STROBE, 0);
- digitalWrite(PIN_OE_, 1);
+  pinMode(PIN_CLK, OUTPUT);
+  pinMode(PIN_SDI, OUTPUT);
+  pinMode(PIN_STROBE, OUTPUT);
+  pinMode(PIN_OE_, OUTPUT);
+  digitalWrite(PIN_CLK, 0);
+  digitalWrite(PIN_SDI, 0);
+  digitalWrite(PIN_STROBE, 0);
+  digitalWrite(PIN_OE_, 1);     // enable VFD only after values initialized
 
   if (ds3231_setup()) {
      Serial.println("ds3231_setup succeeded");
@@ -140,18 +186,10 @@ void setup() {
   }
   else {
     Serial.println("ds3231_setup failed");
-#if 0    
-    // local "ISO 8601" format e.g. 2020-06-25T15:29:37
-      time_t local_time = datetime_parse("2021-09-04T19:38:00");
-      time_t new_utc = myTZ.toUTC(local_time);
-      Serial.print("Set time: ");
-      printDateTime(new_utc, tcr->abbrev);
-  
-    ds3231_set(new_utc);
-    g_time_valid = true;
-#endif
+    // time remains invalid until set by user
   }
-  if (ds3231_getUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size())) {
+
+  if (ds3231_getUserBytes(g_nv_state.get_packed_bytes(), g_nv_state.get_packed_size())) {
       if (g_nv_state.validate_checksum()) {
           Serial.print("Get valid user state; b "); Serial.println(g_nv_state.st.brightness);
           Serial.print("   rot "); Serial.println(g_nv_state.st.rotation);
@@ -162,6 +200,7 @@ void setup() {
           write_nvm();
       }
   }
+
   ir_setup();
   
   bt_setup();
@@ -290,7 +329,27 @@ bool do_ir()
                   time_t utc = ds3231_get_unixtime();
                   time_t local = myTZ.toLocal(utc, &tcr);
                   Serial.print("Get time: ");
+                  if (!g_time_valid) Serial.print(" [INVALID] ");
                   printDateTime(local, tcr->abbrev);            
+              }
+              break;
+              
+          case IR_CHDOWN:
+              if (!ir_rep) {
+                  uint8_t *b = g_nv_state.get_packed_bytes();
+                  ds3231_getUserBytes(b, g_nv_state.get_packed_size());
+                  Serial.print(b[0], HEX); 
+                  Serial.print(b[1], HEX); 
+                  Serial.print(b[2], HEX); 
+                  Serial.print(b[3], HEX); 
+                  Serial.print(b[4], HEX); 
+                  if (g_nv_state.validate_checksum()) {
+                      Serial.print(". Get valid user state; b "); Serial.println(g_nv_state.st.brightness);
+                      Serial.print("   rot "); Serial.println(g_nv_state.st.rotation);
+                  }
+                  else {
+                      Serial.println(" Bad user state");
+                  }
               }
               break;
               
@@ -345,7 +404,7 @@ void set_rotation(int r_) {
 }
 
 void write_nvm() {
-    //ds3231_setUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size());
+    ds3231_setUserBytes(g_nv_state.get_packed_bytes(), g_nv_state.get_packed_size());
 }
 
 void update_vfd()
@@ -416,18 +475,18 @@ void time_to_vfd()
 
 void do_test_vfd() {
     static int16_t cnt = 0;
-  uint8_t digit = cnt/14;
-  uint8_t lo_hi = (cnt/7) % 2;
-  uint8_t seg = cnt % 7;
-  memset(sdi_d, 0, sizeof(sdi_d));
-  
-  for (uint8_t tube = 0 ; tube < 6; tube ++) {
-   sdi_d[tube] = (cnt&1) ? (1<<map_seg_to_bit[tube]) : ~(1<<map_seg_to_bit[tube]);
-  }
-  update_vfd();
-  
-   cnt=(cnt+1)%28;
-   digitalWrite(PIN_LED, cnt&1);
+    uint8_t digit = cnt/14;
+    uint8_t lo_hi = (cnt/7) % 2;
+    uint8_t seg = cnt % 7;
+    memset(sdi_d, 0, sizeof(sdi_d));
+    
+    for (uint8_t tube = 0 ; tube < 6; tube ++) {
+        sdi_d[tube] = (cnt&1) ? (1<<map_seg_to_bit[tube]) : ~(1<<map_seg_to_bit[tube]);
+    }
+    update_vfd();
+    
+    cnt=(cnt+1)%28;
+    digitalWrite(PIN_LED, cnt&1);
 }
 
 elapsedMillis vfd_timer;
