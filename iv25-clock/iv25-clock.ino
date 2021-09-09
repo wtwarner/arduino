@@ -116,7 +116,7 @@ TimeChangeRule *tcr; // pointer to the time change rule, use to get TZ abbrev
 
 void setup() {
   Serial.begin(9600);
-  delay(1500);
+  delay(2000);
   Serial.println("Start");
   
  pinMode(PIN_LED, OUTPUT);
@@ -345,7 +345,7 @@ void set_rotation(int r_) {
 }
 
 void write_nvm() {
-    ds3231_setUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size());
+    //ds3231_setUserBytes(g_nv_state.get_bytes(), g_nv_state.get_size());
 }
 
 void update_vfd()
