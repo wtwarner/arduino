@@ -192,6 +192,8 @@ elapsedMillis beat_timer;
 
 elapsedMillis pot_timer;
 
+enum { ENTRY_BPM, ENTRY_BRIGHTNESS, ENTRY_DENOM } entry_mode = ENTRY_BPM;
+
 void setup() {
     SNVS_LPCR |= (1 << 24); //Enable NVRAM - documented in SDK
     pst = (persistent_state_t *)0x400d4100; // IMXRT_SNVS_LPGPR0
@@ -302,6 +304,8 @@ bool amp_disabled = true;
 int playWav_idx = 0;
 int playMem_idx = 0;
 
+unsigned long button_start_time;
+
 void loop()
 {
     bool shift = false;
@@ -337,6 +341,9 @@ void loop()
     if (pot_timer >= 10) {
         pot_timer = 0;
 
+        //
+        // volume pot
+        //
         const int adc_vol = adc->adc0->analogRead(PIN_VOL); 
         const float gain = 2.0 * (1.0 - (float)adc_vol / (float)adc->adc0->getMaxValue());
 
@@ -346,42 +353,105 @@ void loop()
             first_gain = false;
             prev_gain = gain;
         }
-  
+
+        //
+        // multi-purpose pot - BPM, Brightness, Meter denominator
+        //
         const int adc_bpm = adc->adc1->analogRead(PIN_BPM);
-        const float bpm_raw = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
-        float bpm_filt = fir.processReading(bpm_raw);
-        if (vol_count) {
-            vol_count --;
-            bpm_filt = bpm_raw;  // avoid filter until initialized 
+        if (entry_mode == ENTRY_BPM) {
+            const float bpm_raw = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
+            float bpm_filt = fir.processReading(bpm_raw);
+            if (vol_count) {
+                vol_count --;
+                bpm_filt = bpm_raw;  // avoid filter until initialized 
+            }
+            
+            if (first_bpm || fabs(prev_bpm - bpm_filt) >= 0.2) {
+                bpm = bpm_filt;
+                beat_timer_ms = int(60*1000.0 / bpm + 0.5);
+                Serial.print("bpm "); Serial.println(bpm);
+                encode_decimal(bpm);
+                shift = true;
+
+                first_bpm = false;
+                prev_bpm = bpm;
+            }
         }
-    
-        if (first_bpm || fabs(prev_bpm - bpm_filt) >= 0.2) {
-            bpm = bpm_filt;
-            beat_timer_ms = int(60*1000.0 / bpm + 0.5);
-            Serial.print("bpm "); Serial.println(bpm);
-            uint16_t bpm_int = int(bpm + 0.5);
-            uint8_t hundreds = bpm_int/100;
-            uint8_t tens = (bpm_int % 100)/10;
-            uint8_t ones = (bpm_int % 10);
-            bool blank_hundreds = (hundreds == 0);
-            bool blank_tens = blank_hundreds && (tens == 0);
-            sdi_d[0] &= ~0xf;
-            sdi_d[0] |= blank_hundreds ? 15 : hundreds;
-            sdi_d[1] = ((blank_tens ? 10 : tens) << 4) | ones;
+        else if (entry_mode == ENTRY_BRIGHTNESS) {
+            const float b_f = 1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue();
+            pst->s.nixie_brightness = max(0, min(int(b_f + 0.5), 255));
+            pst->update_checksum();
+
+            encode_decimal(pst->s.nixie_brightness);
             shift = true;
-            first_bpm = false;
-            prev_bpm = bpm;
+            analogWrite(PIN_PWM, pst->s.nixie_brightness);
+
+            Serial.print("bright "); Serial.println(pst->s.nixie_brightness);
+        }
+        else if (entry_mode == ENTRY_DENOM) {
+            const float d_f = (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) * 12 + 1;
+            pst->s.meter_denom = max(1, min(int(d_f + 0.5), 12));
+            pst->update_checksum();
+
+            encode_decimal(pst->s.meter_denom);
+            shift = true;
+            beat = beat % pst->s.meter_denom;
+            
+            Serial.print("denom "); Serial.println(pst->s.meter_denom);
         }
 
     }
     if (shift) {
         update_shift();
     }
-  
-    if (button.update() && button.fallingEdge()) {
-        pst->s.sample_set_idx = (pst->s.sample_set_idx + 1) % (sizeof(metronome_sample_sets)/sizeof(metronome_sample_sets[0]));
-        pst->update_checksum();
-        Serial.print("button "); Serial.println(pst->s.sample_set_idx);
-    }
 
+    if ((millis() - button_start_time) > 30000) { // 30 second timeout
+        entry_mode = ENTRY_BPM;
+    }
+    
+    if (button.update()) {
+        if (button.risingEdge()) {
+            button_start_time = millis();
+        }
+        if (button.fallingEdge()) {
+            if ((millis() - button_start_time) > 2000) {
+                if (entry_mode == ENTRY_BPM) {
+                    entry_mode = ENTRY_BRIGHTNESS;
+                    Serial.println("entry: brightness");
+                }
+                else {
+                    entry_mode = ENTRY_BPM;
+                    Serial.println("entry: bpm");
+                }
+            }
+            else if (entry_mode == ENTRY_BRIGHTNESS) {
+                entry_mode = ENTRY_DENOM;
+                Serial.println("entry: demon"); 
+            }
+            else if (entry_mode == ENTRY_DENOM) {
+                entry_mode = ENTRY_BPM;
+                Serial.println("entry: bpm");
+            }
+            else {              // regular BPM mode
+                pst->s.sample_set_idx = (pst->s.sample_set_idx + 1) % (sizeof(metronome_sample_sets)/sizeof(metronome_sample_sets[0]));
+                pst->update_checksum();
+                Serial.print("button: sample "); Serial.println(pst->s.sample_set_idx);
+            }
+        }
+    }
+}
+    
+void encode_decimal(float val)
+{
+    const uint8_t BLANK = 15;
+    const uint16_t val_int = int(val + 0.5);
+    const uint8_t hundreds = val_int/100;
+    const uint8_t tens = (val_int % 100)/10;
+    const uint8_t ones = (val_int % 10);
+    const bool blank_hundreds = (hundreds == 0);
+    const bool blank_tens = blank_hundreds && (tens == 0);
+
+    sdi_d[0] &= ~0xf;
+    sdi_d[0] |= blank_hundreds ? BLANK : hundreds;
+    sdi_d[1] = ((blank_tens ? BLANK : tens) << 4) | ones;
 }
