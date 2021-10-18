@@ -7,7 +7,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
-#include <Bounce.h>
+#include <Bounce2.h>
 #include <ADC.h>
 #include <ADC_util.h>
 #include <FIR.h>
@@ -16,8 +16,6 @@
 // WAV files converted to code by wav2sketch
 #include "AudioSampleSnare.h"        // http://www.freesound.org/people/KEVOY/sounds/82583/
 #include "AudioSampleTomtom.h"       // http://www.freesound.org/people/zgump/sounds/86334/
-#include "AudioSampleHihat.h"        // http://www.freesound.org/people/mhc/sounds/102790/
-#include "AudioSampleKick.h"         // http://www.freesound.org/people/DWSD/sounds/171104/
 
 //
 // Pin assignments
@@ -25,7 +23,7 @@
 static const int PIN_BPM = 14; // ADC0 - bpm
 static const int PIN_VOL = 15; // ADC1 - volume
 
-static const int PIN_BUT = 6;    // button
+static const int PIN_BUT1 = 6;    // button 1
 static const int PIN_BUT2 = 5;    // button 2
 static const int PIN_SD_CS = 10; // SD Card
 
@@ -134,8 +132,7 @@ static double filter_taps[FILTER_TAP_NUM] = {
 
 FIR<double, FILTER_TAP_NUM> fir;
 
-Bounce button = Bounce(PIN_BUT, 5);
-Bounce button2 = Bounce(PIN_BUT2, 5);
+Bounce2::Button button1, button2;
 
 //
 // persistent state
@@ -238,11 +235,14 @@ void setup() {
 
   pinMode(PIN_BPM, INPUT);
   pinMode(PIN_VOL, INPUT);
-  pinMode(PIN_BUT, INPUT);
-  pinMode(PIN_BUT2, INPUT);
   pinMode(PIN_PWM, OUTPUT);
   analogWriteFrequency(PIN_PWM, 500);
   analogWrite(PIN_PWM, pst.s.nixie_brightness);
+
+  button1.attach(PIN_BUT1, INPUT);
+  button1.setPressedState(LOW);
+  button2.attach(PIN_BUT2, INPUT);
+  button2.setPressedState(LOW);
 
   pinMode(PIN_CLK, OUTPUT);
   pinMode(PIN_SDI, OUTPUT);
@@ -315,7 +315,7 @@ sample_set_t metronome_sample_sets[] = {
   { 2, sample_t("WITTNER1.WAV"), sample_t("WITTNER2.WAV") }
 
 };
-
+static const unsigned int num_sample_sets = sizeof(metronome_sample_sets) / sizeof(metronome_sample_sets[0]);
 
 //
 // for two TPIC6B595 shift registers
@@ -344,152 +344,172 @@ bool amp_disabled = true;
 int playWav_idx = 0;
 int playMem_idx = 0;
 
-unsigned long button_start_time, button2_start_time;
+elapsedMillis button1_time, button2_time;
 
 void loop()
 {
-  bool shift = false;
+    bool shift = false;
 
-  if (amp_disabled && millis() > 1000 && beat == 0) {
-    audioamp.enableChannel(true, true);
-    amp_disabled = false;
-  }
-
-  if (beat_timer >= beat_timer_ms) {
-    beat_timer = 0;
-
-    const sample_set_t &samp_set = metronome_sample_sets[pst.s.sample_set_idx];
-    const sample_t &samp = samp_set.samples[(beat == 0) ? 0 : (1 + (beat % (samp_set.num_samples - 1)))];
-
-    if (samp.is_sd) {
-      playWav[playWav_idx].play(samp.filename);
-      playWav_idx = 1 - playWav_idx;
-    }
-    else {
-      playMem[playMem_idx].play(samp.sample_mem);
-      playMem_idx = 1 - playMem_idx;
+    if (amp_disabled && millis() > 1000 && beat == 0) {
+        audioamp.enableChannel(true, true);
+        amp_disabled = false;
     }
 
-    //Serial.println("beat");
+    if (beat_timer >= beat_timer_ms) {
+        beat_timer = 0;
 
-    sdi_d[1] = (sdi_d[1] & ~0x80) | ((beat & 1) << 7);
-    shift = true;
+        const sample_set_t &samp_set = metronome_sample_sets[pst.s.sample_set_idx];
+        const sample_t &samp = samp_set.samples[(beat == 0) ? 0 : (1 + (beat % (samp_set.num_samples - 1)))];
 
-    beat = (beat + 1) % pst.s.meter_denom;
-  }
-
-  if (pot_timer >= 10) {
-    pot_timer = 0;
-
-    //
-    // volume pot
-    //
-    const int adc_vol = adc->adc0->analogRead(PIN_VOL);
-    const float gain = 2.0 * (1.0 - (float)adc_vol / (float)adc->adc0->getMaxValue());
-
-    if (first_gain || fabs(prev_gain - gain) > 0.01) {
-      Serial.print("gain "); Serial.println(gain);
-      amp1.gain(gain);
-      first_gain = false;
-      prev_gain = gain;
-    }
-
-    //
-    // multi-purpose pot - BPM, Brightness, Meter denominator
-    //
-    const int adc_bpm = adc->adc1->analogRead(PIN_BPM);
-    if (entry_mode == ENTRY_BPM) {
-      const float bpm_raw = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
-      float bpm_filt = fir.processReading(bpm_raw);
-      if (vol_count) {
-        vol_count --;
-        bpm_filt = bpm_raw;  // avoid filter until initialized
-      }
-
-      if (first_bpm || fabs(prev_bpm - bpm_filt) >= 0.2) {
-        bpm = bpm_filt;
-        beat_timer_ms = int(60 * 1000.0 / bpm + 0.5);
-        //Serial.print("bpm "); Serial.println(bpm);
-        encode_decimal(bpm);
-        shift = true;
-
-        first_bpm = false;
-        prev_bpm = bpm;
-      }
-    }
-
-
-  }
-  if (shift) {
-    update_shift();
-  }
-
-  // button 1
-  if (button.update()) {
-    if (button.fallingEdge()) {
-      button_start_time = millis();
-    }
-    if (button.risingEdge()) {
-      if ((millis() - button_start_time) > 2000) {
-        if (entry_mode == ENTRY_BPM) {
-          entry_mode = ENTRY_BRIGHTNESS;
-          Serial.println("entry: brightness");
+        if (samp.is_sd) {
+            playWav[playWav_idx].play(samp.filename);
+            playWav_idx = 1 - playWav_idx;
         }
         else {
-          entry_mode = ENTRY_BPM;
-          Serial.println("entry: bpm");
-        }
-      }
-      else if (entry_mode == ENTRY_BRIGHTNESS) {
-        entry_mode = ENTRY_DENOM;
-        Serial.println("entry: demon");
-      }
-      else if (entry_mode == ENTRY_DENOM) {
-        entry_mode = ENTRY_BPM;
-        Serial.println("entry: bpm");
-      }
-      else {              // regular BPM mode
-        pst.s.sample_set_idx = (pst.s.sample_set_idx + 1) % (sizeof(metronome_sample_sets) / sizeof(metronome_sample_sets[0]));
-        pst.update_checksum();
-        Serial.print("button: sample "); Serial.println(pst.s.sample_set_idx);
-      }
-    }
-  }
-
-  if (button2.update()) {
-    if (button2.fallingEdge()) {
-      button2_start_time = millis();
-      if (entry_mode == ENTRY_BRIGHTNESS) {
-        float new_b = pst.s.nixie_brightness + 10;
-        if (new_b > 255) {
-          new_b = 0;
+            playMem[playMem_idx].play(samp.sample_mem);
+            playMem_idx = 1 - playMem_idx;
         }
 
-        pst.s.nixie_brightness = max(0, min(int(new_b + 0.5), 255));
-        pst.update_checksum();
+        //Serial.println("beat");
 
-        //encode_decimal(pst.s.nixie_brightness);
-        //shift = true;
-        analogWrite(PIN_PWM, pst.s.nixie_brightness);
-
-        Serial.print("bright "); Serial.println(pst.s.nixie_brightness);
-      }
-      else if (entry_mode == ENTRY_DENOM) {
-
-        pst.s.meter_denom ++;
-        if (pst.s.meter_denom > 12) {
-          pst.s.meter_denom = 1;
-        }
-        pst.update_checksum();
-
-        encode_decimal(pst.s.meter_denom);
+        sdi_d[1] = (sdi_d[1] & ~0x80) | ((beat & 1) << 7);
         shift = true;
-        beat = beat % pst.s.meter_denom;
 
-        Serial.print("denom "); Serial.println(pst.s.meter_denom);
-      }
+        beat = (beat + 1) % pst.s.meter_denom;
     }
-  }
+
+    if (pot_timer >= 10) {
+        pot_timer = 0;
+
+        //
+        // volume pot
+        //
+        const int adc_vol = adc->adc0->analogRead(PIN_VOL);
+        const float gain = 2.0 * (1.0 - (float)adc_vol / (float)adc->adc0->getMaxValue());
+
+        if (first_gain || fabs(prev_gain - gain) > 0.01) {
+            Serial.print("gain "); Serial.println(gain);
+            amp1.gain(gain);
+            first_gain = false;
+            prev_gain = gain;
+        }
+
+        //
+        // BPM pot
+        //
+        const int adc_bpm = adc->adc1->analogRead(PIN_BPM);
+        const float bpm_raw = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
+        float bpm_filt = fir.processReading(bpm_raw);
+        if (vol_count) {
+            vol_count --;
+            bpm_filt = bpm_raw;  // avoid filter until initialized
+        }
+    
+        if (first_bpm || fabs(prev_bpm - bpm_filt) >= 0.2) {
+            bpm = bpm_filt;
+            beat_timer_ms = int(60 * 1000.0 / bpm + 0.5);
+            //Serial.print("bpm "); Serial.println(bpm);
+            encode_decimal(bpm);
+            shift = true;
+        
+            first_bpm = false;
+            prev_bpm = bpm;
+        }
+    }
+
+    //
+    // Normal mode:
+    //   button 1 or 2: decrease/increase sample set
+    // button 1+2 press: enter Brightness
+    //   button 1 or 2: decrease/increase
+    // button 1+2 press: enter Denom
+    //   button 1 or 2: decrease/increase
+    button1.update();
+    button2.update();
+
+    switch (entry_mode) {
+        case ENTRY_BPM:
+            if (button1.isPressed() && button2.isPressed()) {
+                entry_mode = ENTRY_BRIGHTNESS;
+                button1_time = 0;
+                button2_time = 0;
+                Serial.println("entry: brightness");
+            }
+            else if (button1.pressed() || button2.pressed()) {
+                // sample set idx wraps around 
+                unsigned int delta = button1.pressed() ? (num_sample_sets-1) : 1;
+                pst.s.sample_set_idx = (pst.s.sample_set_idx + delta) % num_sample_sets;
+                pst.update_checksum();
+                Serial.print("button: sample "); Serial.println(pst.s.sample_set_idx);
+            }
+            break;
+            
+        case ENTRY_BRIGHTNESS: {
+            int delta = 0;
+            if (button1.isPressed() && button2.isPressed()) {
+                entry_mode = ENTRY_DENOM;
+                Serial.println("entry: denom");
+            }
+            else if (button1.pressed()) {
+                button1_time = 0;
+                delta = -1;
+            }
+            else if (button1.isPressed() && button1_time > 250) {
+                button1_time = 0;
+                delta = -10;
+            }
+            else if (button2.pressed()) {
+                button2_time = 0;
+                delta = +1;
+            }
+            else if (button2.isPressed() && button2_time > 250) {
+                button2_time = 0;
+                delta = +10;
+            }
+
+            if (delta) {
+                float new_b = pst.s.nixie_brightness + delta;
+                pst.s.nixie_brightness = max(0, min(int(new_b + 0.5), 255));
+                pst.update_checksum();
+
+                analogWrite(PIN_PWM, pst.s.nixie_brightness);
+
+                Serial.print("bright "); Serial.println(pst.s.nixie_brightness);
+            }
+            break;
+        }
+
+        case ENTRY_DENOM:
+        {
+            int delta = 0;
+            if (button1.isPressed() && button2.isPressed()) {
+                entry_mode = ENTRY_BPM;
+                Serial.println("entry: bpm");
+            }
+            else if (button1.pressed()) {
+                delta = -1;
+            }
+            else if (button2.pressed()) {
+                delta = +1;
+            }
+
+            if (delta) {
+                pst.s.meter_denom = max(1, min(pst.s.meter_denom + delta, 12));
+                pst.update_checksum();
+
+                encode_decimal(pst.s.meter_denom);
+                shift = true;
+                beat = beat % pst.s.meter_denom;
+
+                Serial.print("denom "); Serial.println(pst.s.meter_denom);
+            }
+            break;
+        }
+    }
+
+    if (shift) {
+        update_shift();
+    }
 }
 
 void encode_decimal(float val)
