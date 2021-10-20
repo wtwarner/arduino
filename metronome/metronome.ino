@@ -36,17 +36,18 @@ static const int PIN_PWM = 9;   // Nixie brightness PWM
 //
 // Audio processing
 //
-AudioPlayMemory    playMem[2];
+AudioPlayMemory    playMem;
 AudioPlaySdWav     playWav[2];
+AudioSynthWaveform playTone;
 
 AudioMixer4        mix1;    //  4-channel mixer
 AudioAmplifier     amp1;
 AudioOutputI2S     lineout;
 
-AudioConnection c1(playMem[0], 0, mix1, 0);
-AudioConnection c2(playMem[1], 0, mix1, 1);
-AudioConnection c3(playWav[0], 0, mix1, 2);
-AudioConnection c4(playWav[1], 0, mix1, 3);
+AudioConnection c1(playMem, 0, mix1, 0);
+AudioConnection c3(playWav[0], 0, mix1, 1);
+AudioConnection c4(playWav[1], 0, mix1, 2);
+AudioConnection c2(playTone, 0, mix1, 3);
 
 AudioConnection c5(mix1, 0, amp1, 0);
 
@@ -197,6 +198,7 @@ persistent_state_t pst;
 
 static const float MAX_BPM = 400.0;
 static const float MIN_BPM = 10.0;
+static const int MAX_METER_DENOM = 12;
 int beat = 0;
 float bpm = 120.0;
 float beat_timer_ms = 500.0; // 120 bpm
@@ -204,7 +206,7 @@ elapsedMillis beat_timer;
 
 elapsedMillis pot_timer;
 
-enum { ENTRY_BPM, ENTRY_BRIGHTNESS, ENTRY_DENOM } entry_mode = ENTRY_BPM;
+enum { ENTRY_BPM, ENTRY_BRIGHTNESS, ENTRY_DENOM, ENTRY_TONE } entry_mode = ENTRY_BPM;
 
 void dump()
 {
@@ -264,6 +266,7 @@ void setup() {
   audioamp.begin();
   audioamp.enableChannel(false, false);
   audioamp.setAGCCompression(TPA2016_AGC_OFF);
+  audioamp.setReleaseControl(0);
 #if 0
   // "Rock" settings: ratio 2:1, attack 3.84 ms/6db, release 4110 ms/6db, hold --, fixed gain 6, limiter 8
   audioamp.setAGCCompression(TPA2016_AGC_2);
@@ -271,7 +274,7 @@ void setup() {
   audioamp.setReleaseControl(int(0 / 1644 + 0.5));
   audioamp.setHoldControl(int(0/*.2740*/ / .0137 + 0.5));
 #endif
-  audioamp.setGain(28);
+  audioamp.setGain(20);
 
   AudioMemory(10);
 
@@ -281,7 +284,8 @@ void setup() {
   mix1.gain(0, 1.0);
   mix1.gain(1, 1.0);
   mix1.gain(2, 1.0);
-
+  mix1.gain(3, 0.0); // tone off
+  
   amp1.gain(0.0);
 
   if (!SD.begin(PIN_SD_CS)) {
@@ -340,9 +344,24 @@ float prev_bpm;
 bool first_bpm = true;
 bool amp_disabled = true;
 
+uint8_t note_idx = 0;
+const float note_freq[12] = { 
+  110.00 , // A2
+ 116.54,
+ 123.47 ,
+  130.81,
+138.59 ,
+ 146.83,
+ 155.56,
+ 164.81,
+ 174.61,
+  185.00 ,
+ 196.00 ,
+  207.65 //  G#3/Ab3
+};
+
 // indices to alternate between two players in case they overlap in time.
 int playWav_idx = 0;
-int playMem_idx = 0;
 
 elapsedMillis button1_time, button2_time;
 
@@ -366,8 +385,7 @@ void loop()
             playWav_idx = 1 - playWav_idx;
         }
         else {
-            playMem[playMem_idx].play(samp.sample_mem);
-            playMem_idx = 1 - playMem_idx;
+            playMem.play(samp.sample_mem);
         }
 
         //Serial.println("beat");
@@ -426,41 +444,89 @@ void loop()
     //   button 1 or 2: decrease/increase
     button1.update();
     button2.update();
+    static bool swallow1 = false;
+    static bool swallow2 = false;
+  
+     bool push1 = button1.released();
+     if (push1 && swallow1) { push1 = swallow1 = false; }
+     bool push2 = button2.released();
+     if (push2 && swallow2) { push2 = swallow2 = false; }
+     
+    const bool both_buttons = button1.pressed() && button2.isPressed() ||
+                button1.isPressed() && button2.pressed();
 
     switch (entry_mode) {
         case ENTRY_BPM:
-            if (button1.isPressed() && button2.isPressed()) {
-                entry_mode = ENTRY_BRIGHTNESS;
-                button1_time = 0;
-                button2_time = 0;
-                Serial.println("entry: brightness");
+            if (both_buttons) {
+                entry_mode = ENTRY_TONE;
+                swallow1 = swallow2 = true;
+                playTone.frequency(note_freq[note_idx]*2);
+                playTone.amplitude(1.0);
+                playTone.begin(WAVEFORM_SINE);
+                encode_decimal(note_idx);
+                shift = true;
+                for (int i = 0; i < 3; i ++) mix1.gain(i,0.4);
+                mix1.gain(3, 0.8); // tone on
+
+                Serial.println("entry: tone");
             }
-            else if (button1.pressed() || button2.pressed()) {
+            else if (push1 || push2) {
                 // sample set idx wraps around 
-                unsigned int delta = button1.pressed() ? (num_sample_sets-1) : 1;
+                unsigned int delta = push1 ? (num_sample_sets-1) : 1;
                 pst.s.sample_set_idx = (pst.s.sample_set_idx + delta) % num_sample_sets;
                 pst.update_checksum();
                 Serial.print("button: sample "); Serial.println(pst.s.sample_set_idx);
             }
             break;
-            
+
+       case ENTRY_TONE:
+            if (both_buttons) {
+                entry_mode = ENTRY_BRIGHTNESS;
+                button1_time = 0;
+                button2_time = 0;
+                encode_decimal(bpm);
+                shift = true;
+                swallow1 = swallow2 = true;
+                for (int i = 0; i < 3; i ++) mix1.gain(i,1.0);
+                mix1.gain(3, 0.0); // tone off
+                Serial.println("entry: brightness");
+            }
+            else if (push1 || push2) {
+                // note idx wraps around 
+                unsigned int delta = push1 ? (12-1) : 1;
+                note_idx = (note_idx + delta) % 12;
+                playTone.frequency(note_freq[note_idx]*2);
+                encode_decimal(note_idx);
+                shift = true;
+                pst.update_checksum();
+                Serial.print("button: tone "); Serial.println(note_idx);
+            }
+            break;
+      
         case ENTRY_BRIGHTNESS: {
             int delta = 0;
-            if (button1.isPressed() && button2.isPressed()) {
+            if (both_buttons) {
                 entry_mode = ENTRY_DENOM;
+                swallow1 = swallow2 = true;
+                encode_decimal(pst.s.meter_denom);
+                shift = true;
                 Serial.println("entry: denom");
+            }
+            else if (push1) {
+                delta = -1;
             }
             else if (button1.pressed()) {
                 button1_time = 0;
-                delta = -1;
             }
             else if (button1.isPressed() && button1_time > 250) {
                 button1_time = 0;
                 delta = -10;
             }
+            else if (push2) {
+                delta = +1;
+            }
             else if (button2.pressed()) {
                 button2_time = 0;
-                delta = +1;
             }
             else if (button2.isPressed() && button2_time > 250) {
                 button2_time = 0;
@@ -482,19 +548,22 @@ void loop()
         case ENTRY_DENOM:
         {
             int delta = 0;
-            if (button1.isPressed() && button2.isPressed()) {
+            if (both_buttons) {
                 entry_mode = ENTRY_BPM;
+                swallow1 = swallow2 = true;
+                encode_decimal(bpm);
+                shift = true;
                 Serial.println("entry: bpm");
             }
-            else if (button1.pressed()) {
-                delta = -1;
+            else if (push1) {
+                delta = MAX_METER_DENOM - 1;
             }
-            else if (button2.pressed()) {
-                delta = +1;
+            else if (push2) {
+                delta = 1;
             }
 
             if (delta) {
-                pst.s.meter_denom = max(1, min(pst.s.meter_denom + delta, 12));
+                pst.s.meter_denom = (pst.s.meter_denom - 1 + delta) % MAX_METER_DENOM + 1;
                 pst.update_checksum();
 
                 encode_decimal(pst.s.meter_denom);
