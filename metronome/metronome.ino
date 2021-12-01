@@ -150,7 +150,8 @@ struct persistent_state_t {
       uint8_t sample_set_idx;
       uint8_t nixie_brightness;
       uint8_t meter_denom;
-      uint8_t reserved[12];
+      uint8_t note_idx;
+      uint8_t reserved[11];
       uint8_t checksum;
     } s;
     uint8_t d[16];
@@ -163,6 +164,7 @@ struct persistent_state_t {
     s.sample_set_idx = 1;
     s.nixie_brightness = 192;
     s.meter_denom = 4;
+    s.note_idx = 0;
     update_checksum();
   }
 
@@ -197,14 +199,17 @@ struct persistent_state_t {
 persistent_state_t pst;
 
 static const float MAX_BPM = 400.0;
-static const float MIN_BPM = 10.0;
+static const float MIN_BPM = 30.0;
 static const int MAX_METER_DENOM = 12;
 int beat = 0;
-float bpm = 120.0;
+int bpm = 120;
 float beat_timer_ms = 500.0; // 120 bpm
+float prev_bpm_f;
+bool first_bpm = true;
 elapsedMillis beat_timer;
 
 elapsedMillis pot_timer;
+elapsedMillis entry_timer;
 
 enum { ENTRY_BPM, ENTRY_BRIGHTNESS, ENTRY_DENOM, ENTRY_TONE } entry_mode = ENTRY_BPM;
 
@@ -213,10 +218,11 @@ void dump()
   Serial.printf("d  3: 0: %3d.%3d.%3d.%3d\n", pst.d[3], pst.d[2], pst.d[1], pst.d[0]);
   Serial.printf("d  7: 4: %3d.%3d.%3d.%3d ...\n", pst.d[7], pst.d[6], pst.d[5], pst.d[4]);
   Serial.printf("d 15:12 %3d.%3d.%3d.%3d\n", pst.d[15], pst.d[14], pst.d[13], pst.d[12]);
-  Serial.printf("s_idx %d, bpm %d,  denom %d, chksum %d\n",
+  Serial.printf("s_idx %d, bpm %d,  denom %d, note %d, chksum %d\n",
                 pst.s.sample_set_idx,
                 pst.s.nixie_brightness,
                 pst.s.meter_denom,
+                pst.s.note_idx,
                 pst.s.checksum);
 
 }
@@ -233,6 +239,7 @@ void setup() {
     Serial.println("pst: good checksum");
     Serial.print("denom "); Serial.println(pst.s.meter_denom);
     Serial.print("brightness "); Serial.println(pst.s.nixie_brightness);
+    Serial.print("note_idx "); Serial.println(pst.s.note_idx);
   }
 
   pinMode(PIN_BPM, INPUT);
@@ -340,11 +347,8 @@ void update_shift()
 int vol_count = 35;
 float prev_gain;
 bool first_gain = true;
-float prev_bpm;
-bool first_bpm = true;
 bool amp_disabled = true;
 
-uint8_t note_idx = 0;
 const float note_freq[12] = { 
   110.00 , // A2
  116.54,
@@ -364,6 +368,20 @@ const float note_freq[12] = {
 int playWav_idx = 0;
 
 elapsedMillis button1_time, button2_time;
+
+void enable_tone()
+{
+    for (int i = 0; i < 3; i ++) 
+        mix1.gain(i, 0.4);
+    mix1.gain(3, 0.8);
+}
+
+void disable_tone()
+{
+     for (int i = 0; i < 3; i ++) 
+        mix1.gain(i,1.0);
+     mix1.gain(3, 0.0);
+}
 
 void loop()
 {
@@ -416,22 +434,23 @@ void loop()
         // BPM pot
         //
         const int adc_bpm = adc->adc1->analogRead(PIN_BPM);
-        const float bpm_raw = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
-        float bpm_filt = fir.processReading(bpm_raw);
+        const float bpm_raw_f = (MAX_BPM - MIN_BPM) * (1.0 - (float)adc_bpm / (float)adc->adc1->getMaxValue()) + MIN_BPM;
+        float bpm_filt_f = fir.processReading(bpm_raw_f);
         if (vol_count) {
             vol_count --;
-            bpm_filt = bpm_raw;  // avoid filter until initialized
+            bpm_filt_f = bpm_raw_f;  // avoid filter until initialized
         }
     
-        if (first_bpm || fabs(prev_bpm - bpm_filt) >= 0.2) {
-            bpm = bpm_filt;
-            beat_timer_ms = int(60 * 1000.0 / bpm + 0.5);
-            //Serial.print("bpm "); Serial.println(bpm);
-            encode_decimal(bpm);
-            shift = true;
-        
+        if (first_bpm || fabs(prev_bpm_f - bpm_filt_f) >= 0.25) {
+            bpm = roundf(bpm_filt_f);
+            beat_timer_ms = roundf(60 * 1000.0 / bpm);
+            if (first_bpm || (entry_mode == ENTRY_BPM && bpm != roundf(prev_bpm_f))) {
+                Serial.print("bpm "); Serial.println(bpm);
+                encode_decimal(bpm);
+                shift = true;
+            }
             first_bpm = false;
-            prev_bpm = bpm;
+            prev_bpm_f = bpm_filt_f;
         }
     }
 
@@ -452,21 +471,25 @@ void loop()
      bool push2 = button2.released();
      if (push2 && swallow2) { push2 = swallow2 = false; }
      
-    const bool both_buttons = button1.pressed() && button2.isPressed() ||
-                button1.isPressed() && button2.pressed();
+    const bool both_buttons = (button1.pressed() && button2.isPressed()) ||
+                (button1.isPressed() && button2.pressed());
 
+    if (both_buttons || push1 || push2) {
+      entry_timer = 0;
+    }
+    const bool entry_timer_elapsed = (entry_timer > 5000);
+    
     switch (entry_mode) {
         case ENTRY_BPM:
             if (both_buttons) {
                 entry_mode = ENTRY_TONE;
                 swallow1 = swallow2 = true;
-                playTone.frequency(note_freq[note_idx]*2);
+                playTone.frequency(note_freq[pst.s.note_idx]*2);
                 playTone.amplitude(1.0);
                 playTone.begin(WAVEFORM_SINE);
-                encode_decimal(note_idx);
+                encode_decimal(pst.s.note_idx);
                 shift = true;
-                for (int i = 0; i < 3; i ++) mix1.gain(i,0.4);
-                mix1.gain(3, 0.8); // tone on
+                enable_tone();
 
                 Serial.println("entry: tone");
             }
@@ -484,22 +507,27 @@ void loop()
                 entry_mode = ENTRY_BRIGHTNESS;
                 button1_time = 0;
                 button2_time = 0;
-                encode_decimal(bpm);
+                encode_decimal(888);
                 shift = true;
                 swallow1 = swallow2 = true;
-                for (int i = 0; i < 3; i ++) mix1.gain(i,1.0);
-                mix1.gain(3, 0.0); // tone off
+                disable_tone();
                 Serial.println("entry: brightness");
             }
             else if (push1 || push2) {
                 // note idx wraps around 
                 unsigned int delta = push1 ? (12-1) : 1;
-                note_idx = (note_idx + delta) % 12;
-                playTone.frequency(note_freq[note_idx]*2);
-                encode_decimal(note_idx);
+                pst.s.note_idx = (pst.s.note_idx + delta) % 12;
+                playTone.frequency(note_freq[pst.s.note_idx]*2);
+                encode_decimal(pst.s.note_idx);
                 shift = true;
                 pst.update_checksum();
-                Serial.print("button: tone "); Serial.println(note_idx);
+                Serial.print("button: tone "); Serial.println(pst.s.note_idx);
+            }
+            else if (entry_timer_elapsed) {
+              entry_mode = ENTRY_BPM;
+              encode_decimal(bpm);
+              disable_tone();
+              shift = true;
             }
             break;
       
@@ -542,6 +570,11 @@ void loop()
 
                 Serial.print("bright "); Serial.println(pst.s.nixie_brightness);
             }
+            else if (entry_timer_elapsed) {
+              entry_mode = ENTRY_BPM;
+              encode_decimal(bpm);
+              shift = true;
+            }
             break;
         }
 
@@ -571,6 +604,11 @@ void loop()
                 beat = beat % pst.s.meter_denom;
 
                 Serial.print("denom "); Serial.println(pst.s.meter_denom);
+            }
+            else if (entry_timer_elapsed) {
+              entry_mode = ENTRY_BPM;
+              encode_decimal(bpm);
+              shift = true;
             }
             break;
         }
