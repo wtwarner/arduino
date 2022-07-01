@@ -46,6 +46,32 @@ TCCR2A = 0  //  OC2A off
 
 }
 
+#define NUM_TAPS 9
+
+float coeff[NUM_TAPS] = { 
+#if NUM_TAPS == 5
+  0.078443841837769424,
+0.253849604603263890,
+0.335413107117933429,
+0.253849604603263890,
+0.078443841837769424
+#endif
+
+#if NUM_TAPS == 9
+0.039899882278863812,
+0.086079154232428304,
+0.129118731348642463,
+0.159599529115455191,
+0.170605406049220448,
+0.159599529115455191,
+0.129118731348642463,
+0.086079154232428304,
+0.039899882278863812
+#endif
+};
+
+float values[NUM_TAPS] = {0};
+
 void loop() {
   // put your main code here, to run repeatedly:
 
@@ -86,7 +112,18 @@ void loop() {
 //   if (delta < 0) {
 //     delta = (0xffffffff - us_hi) - us_lo;
 //   }
-  Serial.print(counts); Serial.print("; "); Serial.print(delta); Serial.print(" "); Serial.println(us_hi-us_start);
-  delay(1000);
+  float v = 10.0 - 10.0*((float)counts - 49000.0) / (54500.0 - 49000.0);
+  for (int i = 1; i < NUM_TAPS; i++) {
+    values[i] = values[i-1];
+  }
+  values[0] = v;
+  float avg_v = 0;
+  for (int i = 0; i < NUM_TAPS; i++) {
+    avg_v += values[i] * coeff[i];
+  }
+   //Serial.print(counts); Serial.print(" "); // Serial.print(delta); Serial.print(" "); Serial.println(us_hi-us_start);
+ 
+  Serial.print("v:"); Serial.print(v); Serial.print(", avg:"); Serial.println(avg_v);
+  delay(100);
   
 }

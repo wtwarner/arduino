@@ -10,3 +10,12 @@
 [submodule "libraries/Audio"]
 	path = libraries/Audio
 	url = https://github.com/PaulStoffregen/Audio.git
+[submodule "libraries/movingAvg"]
+	path = libraries/movingAvg
+	url = https://github.com/JChristensen/movingAvg.git
+[submodule "libraries/Arduino-SerialCommands"]
+	path = libraries/Arduino-SerialCommands
+	url = https://github.com/ppedro74/Arduino-SerialCommands.git
+[submodule "STM32-GPSDO"]
+	path = STM32-GPSDO
+	url = https://github.com/wtwarner/STM32-GPSDO.git
