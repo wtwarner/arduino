@@ -126,16 +126,40 @@ void setup() {
   Serial.println(" done");
 #endif
 
+  int rom_len = 2048;
+  char *rom_data;
+  switch (ROM) {
+      case 0:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035820_02_h1;
+          break;
+      case 1:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035821_02_jk1;
+          break;
+      case 2:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035825_02_r1;
+          break;
+      case 3:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035824_02_np1;
+          break;
+      case 4:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035823_02_ln1;
+          break;
+      case 5:
+          rom_data = _Users_w_warner_Library_Mobile_Documents_com_apple_CloudDocs_Missile_Command__missile_command_v3_035822_03e_kl1;
+          break;
+      default:
+          Serial.print("bad ROM index");
+          return;
+  }
 #if 1
   // Program data bytes
   Serial.print("Programming EEPROM");
-  for (int address = 0; address < test_bin_len; address += 1) {
-    //writeEEPROM(0 + address, 0xff);
-     writeEEPROM(0x780 + address, test_bin[address]);
-
-    if (address % 64 == 0) {
-      Serial.print(".");
-    }
+  for (int address = 0; address < rom_len; address += 1) {
+      writeEEPROM(address, rom_data[address]);
+      
+      if (address % 64 == 0) {
+          Serial.print(".");
+      }
   }
   Serial.println(" done");
 #endif
