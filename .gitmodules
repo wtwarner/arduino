@@ -19,3 +19,6 @@
 [submodule "STM32-GPSDO"]
 	path = STM32-GPSDO
 	url = https://github.com/wtwarner/STM32-GPSDO.git
+[submodule "AR488"]
+	path = AR488
+	url = ./AR488
