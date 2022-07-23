@@ -1,3 +1,6 @@
+//
+// EEPROM programming of type 2716
+//
 #define SHIFT_DATA 2
 #define SHIFT_CLK 3
 #define SHIFT_LATCH 4
@@ -5,6 +8,14 @@
 #define EEPROM_D7 12
 #define EEPROM_CE_ 13
 #define EEPROM_WE_ PIN_A0
+
+extern const PROGMEM uint8_t missile_command_v3_035820_02_h1[];
+extern const PROGMEM uint8_t missile_command_v3_035821_02_jk1[];
+extern const PROGMEM uint8_t missile_command_v3_035825_02_r1[];
+extern const PROGMEM uint8_t missile_command_v3_035824_02_np1[];
+extern const PROGMEM uint8_t missile_command_v3_035823_02_ln1[];
+extern const PROGMEM uint8_t missile_command_v3_035822_03e_kl1[];
+
 
 /*
  * Output the address bits and outputEnable signal using shift registers.
@@ -111,10 +122,14 @@ void setup() {
     pinMode(pin, INPUT_PULLUP);
   }
 
-  Serial.begin(57600);
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+}
 
-#if 1
-// Erase entire EEPROM
+void erase_rom() {
+  // Erase entire EEPROM
   Serial.print("Erasing EEPROM");
   for (int address = 0; address <= 2047; address += 1) {
     writeEEPROM(address, 0xff);
@@ -124,34 +139,119 @@ void setup() {
     }
   }
   Serial.println(" done");
-#endif
+}
 
-#if 1
+const PROGMEM char * get_rom_data(int rom)
+{
+    switch (rom) {
+      case 0:
+          return missile_command_v3_035820_02_h1;
+      case 1:
+          return missile_command_v3_035821_02_jk1;
+      case 2:
+          return missile_command_v3_035822_03e_kl1;
+      case 3:
+          return missile_command_v3_035823_02_ln1;
+      case 4:
+          return missile_command_v3_035824_02_np1;
+      case 5:
+          return missile_command_v3_035825_02_r1;
+      default:
+          Serial.print("bad ROM index");
+          return 0;
+    }
+}
+
+void prog_rom(int rom)
+{
+  int rom_len = 2048;
+  const PROGMEM char *rom_data = get_rom_data(rom);
+  if (rom_data == 0)
+      return;
   // Program data bytes
   Serial.print("Programming EEPROM");
-  for (int address = 0; address < test_bin_len; address += 1) {
-    //writeEEPROM(0 + address, 0xff);
-     writeEEPROM(0x780 + address, test_bin[address]);
-
-    if (address % 64 == 0) {
-      Serial.print(".");
-    }
+  for (int address = 0; address < rom_len; address += 1) {
+      writeEEPROM(address, pgm_read_byte(rom_data + address));
+      
+      if (address % 64 == 0) {
+          Serial.print(".");
+      }
   }
   Serial.println(" done");
-#endif
+}
 
- #if 0
- // Read and print out the contents of the EERPROM
+void comp_rom(int rom)
+{
+    int rom_len = 2048;
+    const PROGMEM char *rom_data = get_rom_data(rom);
+    if (rom_data == 0)
+        return;
+    int mismatches = 0;
+    for (int address = 0; address < rom_len; address += 1) {
+        uint8_t exp = pgm_read_byte(rom_data + address);
+        uint8_t got = readEEPROM(address);
+        if (exp != got) {
+            Serial.print("MISMATCH @0x"); Serial.print(address, HEX);
+            Serial.print(" exp "); Serial.print(exp, HEX);
+            Serial.print(" got "); Serial.println(got, HEX);
+            mismatches ++;
+        }
+        if (mismatches > 10) {
+            Serial.println("...");
+            break;
+        }
+    }
+    if (mismatches == 0) {
+        Serial.println("PASS");
+    }
+    else {
+        Serial.println("FAIL");
+    }
+}
+
+void read_rom()
+{
+
+  // Read and print out the contents of the EERPROM
   Serial.println("Reading EEPROM");
   printContents();
- #endif
-   // put your main code here, to run repeatedly:
-  for (int i = 0; i < 1; i ++) {
-    printContents();
-  }
-
 }
 
 
 void loop() {
+
+    Serial.println("Command:");
+    Serial.println("e - erase");
+    Serial.println("p N - program rom N");
+    Serial.println("c N - compare with rom N");
+    Serial.println("r - read");
+    Serial.print("> ");
+    
+    while (Serial.available() == 0)
+        ;
+    
+    char cmd = Serial.read();
+    switch (cmd) {
+        case 'e':
+            erase_rom();
+            break;
+        case 'p': {
+            int i = Serial.parseInt();
+            Serial.print("Programming ROM ");
+            Serial.println(i);
+            prog_rom(i);
+            break;
+        }
+        case 'c': {
+            int i = Serial.parseInt();
+            Serial.print("Compare ROM ");
+            Serial.println(i);
+            comp_rom(i);
+            break;
+        }
+        case 'r':
+            read_rom();
+            break;
+    }
+    Serial.readStringUntil('\n');
 }
