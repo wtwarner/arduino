@@ -7,6 +7,7 @@ STM32-GPSO: clone of AndrewBCN/STM32-GPSDO with a couple minor changes
 eeprom-programmer: based on Ben Eater's, modified for type 2716 EEPROM with Missile Command arcade ROMs
 
 iv25-clock: analog-style clock using 24 IV25 VFD tubes, DS3231 real-time clock, and BlueTooth serial for configuration.  SparkFun Pro Micro based.
+
 metronome: Nixie-tube display, using Teensy 4.0 with Audio Adapter and Adafruit TPA2016 audio amp board.  
 
 nixie: Nixie-tube clock, with DS3231 real-time clock, and ArduinoBLE Bluetooth control, using Arduino Nano 33 IoT
