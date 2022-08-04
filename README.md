@@ -1,5 +1,4 @@
 # arduino
-Arduino projects
 This contains several of my Arduino-based projects:
 
 STM32-GPSO: clone of AndrewBCN/STM32-GPSDO with a couple minor changes
