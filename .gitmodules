@@ -22,3 +22,6 @@
 [submodule "AR488"]
 	path = AR488
 	url = ./AR488
+[submodule "libraries/Arduino-PID-Library"]
+	path = libraries/Arduino-PID-Library
+	url = https://github.com/br3ttb/Arduino-PID-Library.git
