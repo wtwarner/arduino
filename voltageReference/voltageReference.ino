@@ -18,7 +18,7 @@
  const int PIN_HEATER_WATCHDOG = 4; // pulse to 555 reset
  
  double pid_setpoint, pid_input, pid_output=0;
- PID heaterPID(&pid_input, &pid_output, &pid_setpoint, 2, .8, .2, DIRECT);
+ PID heaterPID(&pid_input, &pid_output, &pid_setpoint, .5, .1, 0, DIRECT);
  
  void setup() {
   Serial.begin(38400);
@@ -37,7 +37,8 @@
   
   pid_input = 25.0; // degrees C
   pid_setpoint = 30.0; // degrees C
-  heaterPID.SetSampleTime(10);
+  heaterPID.SetSampleTime(1);
+  heaterPID.SetOutputLimits(0.0, 1000.0);
   heaterPID.SetMode(AUTOMATIC);
 }
 
@@ -92,14 +93,15 @@ void loop() {
   int32_t inttemp_c = read_inttemp();
 
   heaterPID.Compute();
+  const int pid_output_int = (int)(pid_output + 0.5);
 
   // do manual pulse width modulation
-  delayMicroseconds(255-(int)pid_output);
+  delayMicroseconds(1000-pid_output_int);
 
   // turn on, but only if internal temp is safe
   if ((int)pid_output > 0 && inttemp_c < 3276800) { // 50c in s16.16
     digitalWrite(PIN_HEATER_PWM, 1);
-    delayMicroseconds((int)pid_output);
+    delayMicroseconds(pid_output_int);
   }
   // turn off
   digitalWrite(PIN_HEATER_PWM, 0);
@@ -115,8 +117,8 @@ void loop() {
     pinMode(PIN_REACHTEMP_LED, INPUT);
   }
 
-  if (++cnt == 250) {
-     Serial.print(pid_output); Serial.print(" "); Serial.print(" "); Serial.print(deg_c); Serial.print(" "); Serial.print(deg_c/65536.0);Serial.print(" "); Serial.println(inttemp_c/65536.0); 
+  if (++cnt == 100) {
+     Serial.print(pid_output_int); Serial.print(" "); Serial.print(deg_c); Serial.print(" "); Serial.print(deg_c/65536.0);Serial.print(" "); Serial.println(inttemp_c/65536.0); 
      cnt = 0;
   }
   
