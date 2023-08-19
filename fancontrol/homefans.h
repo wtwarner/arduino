@@ -14,49 +14,5 @@
   #define TX_PIN 6
 #endif
 
-// Define fan states
-#define FAN_HI  3
-#define FAN_MED 2
-#define FAN_LOW 1
-
-const char *fanStateTable[4] = {
-  "off",
-  "low",
-  "medium",
-  "high"
-};
-
-int long value;      // int to save value
-int bits;            // int to save bit number
-int prot;            // int to save Protocol number
-
-struct fan {
-  bool lightState;
-  bool fanState;
-  uint8_t fanSpeed;
-};
-
-fan fans[16];
-
-const char *idStrings[16] = {
-  [ 0] = "0000",
-  [ 1] = "0001",
-  [ 2] = "0010",
-  [ 3] = "0011",
-  [ 4] = "0100",
-  [ 5] = "0101",
-  [ 6] = "0110",
-  [ 7] = "0111",
-  [ 8] = "1000",
-  [ 9] = "1001",
-  [10] = "1010",
-  [11] = "1011",
-  [12] = "1100",
-  [13] = "1101",
-  [14] = "1110",
-  [15] = "1111",
-};
-
-char idchars[] = "01";
 
 RCSwitch mySwitch = RCSwitch();
