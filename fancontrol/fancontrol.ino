@@ -1,6 +1,40 @@
 #include "homefans.h"
 #include "cc1101_debug_service.h"
 #include <elapsedMillis.h>
+#include <Bounce2.h>
+
+enum {
+  BUTTON_LIGHT,
+  BUTTON_FAN_OFF,
+  BUTTON_FAN_LOW,
+  BUTTON_FAN_MED,
+  BUTTON_FAN_HIGH,
+  BUTTON_FAN_REV,
+  NUM_BUTTONS
+};
+
+Bounce2::Button button[NUM_BUTTONS];
+
+const int button_pins[NUM_BUTTONS] = {
+  PIN_A0,
+  PIN_A1,
+  PIN_A2,
+  PIN_A3,
+  PIN_A4,
+  PIN_A5,
+};
+
+const char *button_names[NUM_BUTTONS][2] = {
+  { "light", "toggle" },
+  { "fan", "off" },
+  { "fan", "low" },
+  { "fan", "med" },
+  { "fan", "high" },
+  { "fan", "rev" }
+};
+
+const int fanId = 0;
+const int PIN_LED = 3;
 
 elapsedMillis toggle_timer;
 elapsedMillis led_timer;
@@ -63,7 +97,11 @@ int generateCommand(int fanId, char* attr, char* payload) {
 void setup() {
   Serial.begin(9600);
 
-  //pinMode(LED_BUILTIN, OUTPUT);
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+    button[i].attach( button_pins[i], INPUT_PULLUP ); 
+    button[i].interval(5); 
+    button[i].setPressedState(LOW); 
+  }
   
   ELECHOUSE_cc1101.Init();
   ELECHOUSE_cc1101.setMHZ(RF_FREQUENCY);
@@ -74,21 +112,27 @@ void setup() {
   mySwitch.setProtocol(RF_PROTOCOL);        // send Received Protocol
   mySwitch.setPulseLength(RF_PULSE_LENGTH); // modify this if required
 
-  delay(1000);
-  Serial.print("fan off\n");
-  transmitState(0, "fan", "off");
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, 0);
 }
 
 void loop() {
-  cc1101_debug.debug ();
-  if (toggle_timer >= 2000) {
-    Serial.print("light toggle\n");
-    transmitState(0, "light", "toggle");
-    toggle_timer = 0; 
+  //cc1101_debug.debug ();
+
+  for (int i = 0; i < NUM_BUTTONS; i ++) {
+    button[i].update();
+    if (button[i].pressed() && toggle_timer >= 500) {
+      toggle_timer = 0; 
+      digitalWrite(PIN_LED, 1); // LED ON
+      Serial.print(button_names[i][0]);
+      Serial.print(" ");
+      Serial.println(button_names[i][1]);
+      transmitState(fanId, button_names[i][0], button_names[i][1]);
+    }
   }
+  
   if (led_timer >= 500) {
-    //digitalWrite(LED_BUILTIN, led_state);
-    led_state = !led_state;
-    led_timer = 0;
+    digitalWrite(PIN_LED, 0);
+
   }
 }
