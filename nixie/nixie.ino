@@ -14,6 +14,8 @@
 #include <Timezone_Generic.h>
 #include <arduino-timer.h>
 #include <ArduinoLog.h>
+#include <serial-readline.h>
+
 
 extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
 
@@ -45,7 +47,7 @@ public:
         to_defaults();
     }
     void to_defaults() {
-        nixie_brightness = 192;
+        //nixie_brightness = 192;
         twentyfour_hour = false;
         show_seconds = false;
         neon_gamma = true;
@@ -60,7 +62,7 @@ public:
         antipoison_min = 13;
         antipoison_duration_ms = 600;
     }
-  byte nixie_brightness;
+  //byte nixie_brightness;
   bool twentyfour_hour;
   bool show_seconds;
   bool neon_gamma;
@@ -77,6 +79,114 @@ public:
 };
 
 options_t options;
+
+struct nonvolatile_state_t {
+  nonvolatile_state_t() {
+    init();
+  }
+
+  void init()
+  {
+    memset(unpackedBytes, 0, Size);
+    memset(packedBytes, 0, PackedSize);
+    st.nixie_brightness = 192;
+    st.neon_brightness = 192;
+    update_checksum();
+  }
+
+  void update_checksum() {
+    st.checksum = 255;
+    for (int i = 0; i < Size - 1; i++) {
+      st.checksum += unpackedBytes[i]; // modulo 8-bit sum
+    }
+  }
+
+  bool validate_checksum() {
+    unpack();
+    uint8_t sum = 255;
+    for (int i = 0; i < Size - 1; i++) {
+      sum += unpackedBytes[i]; // modulo 8-bit sum
+    }
+    return sum == st.checksum;
+  }
+
+  uint8_t *get_packed_bytes() {
+    update_checksum();
+    pack();
+    return packedBytes;
+  }
+
+  // the packed fields below represent usable DS3231 fields in Alarm1/2.
+  // The DS3231 fields are BCD, so valid values of a 4-bit field is 0..9.
+  // Values > 9 could result in undefined behavior, so we restrict ourselves to use 3 bits.
+  //
+#   define LIST_PACKED_FIELDS(_)                                                 \
+  /* packed        unpacked                                                 */ \
+  /* byte    bit   byte     bit                                             */ \
+  /* offset, lsb,  offset,  lsb, width                                      */ \
+  _( 0,      0,    0,       0,   3) /* brightness[2:0] - Alarm 1 seconds    */ \
+  _( 0,      4,    0,       3,   2) /* brightness[4:3] - Alarm 1 10 seconds */ \
+  _( 1,      0,    0,       5,   3) /* brightness[7:5] - Alarm 1 minutes    */ \
+  _( 1,      4,    1,       0,   2) /* neo_brightness[1:0] - Alarm 1 10 minutes */ \
+  _( 2,      0,    1,       2,   3) /* neo_brightness[4:2] - Alarm 1 Hour       */ \
+  _( 3,      0,    1,       5,   3) /* neo_brightness[7:5] - Alarm 1 Date       */ \
+  _( 4,      0,    7,       0,   3) /* checksum[2:0] - Alarm 2 minutes      */ \
+  _( 4,      4,    7,       3,   2) /* checksum[4:3] - Alarm 2 10 minutes   */ \
+  _( 5,      0,    7,       5,   3) /* checksum[7:5] - Alarm 2 Hours */
+  //_( 6,      0,    -,       -,   3) /* n/a - Alarm 2 Date */
+
+  void pack()
+  {
+    memset(packedBytes, 0, PackedSize);
+#       define PACK_FIELD(p_off, p_lsb, up_off, up_lsb, width) \
+  packedBytes[p_off] |= ((unpackedBytes[up_off] >> up_lsb) & ((1 << width) - 1)) << p_lsb;
+
+    LIST_PACKED_FIELDS(PACK_FIELD)
+#       undef PACK_FIELD
+  }
+
+  void unpack()
+  {
+    memset(unpackedBytes, 0, Size);
+#       define UNPACK_FIELD(p_off, p_lsb, up_off, up_lsb, width) \
+  unpackedBytes[up_off] |= ((packedBytes[p_off] >> p_lsb) & ((1 << width) - 1)) << up_lsb;
+
+    LIST_PACKED_FIELDS(UNPACK_FIELD)
+#       undef UNPACK_FIELD
+  }
+
+#   undef LIST_PACKED_FIELDS
+
+  int get_packed_size() const {
+    return PackedSize;
+  }
+
+  const static int Size = 8;
+  union {
+    uint8_t unpackedBytes[Size];
+    struct {
+      uint8_t nixie_brightness; // 0..255
+      uint8_t neon_brightness; // 0..255
+      uint8_t reserved[Size - 2 - 1];
+      uint8_t checksum;
+    } st;
+  };
+
+  // packed size is 7 bytes, which is the size of DS3231 Alarm1 + Alarm2 registers.
+  // However, not all the fields in them are used.
+  const static int PackedSize = 7;
+  uint8_t packedBytes[PackedSize];
+};
+
+nonvolatile_state_t g_nv_options;
+
+void serial_received(char *s)
+{
+  String str(s);
+  cmd_parse(str);
+}
+
+SerialLineReader serial_reader(Serial, serial_received);
 
 //
 // TimeZone
@@ -163,6 +273,18 @@ void setup() {
   if (ds3231_setup(clockSqwPin, onehz_interrupt)) {
       display_state = DISP_STATE_TIME;
   }
+  
+  if (ds3231_getUserBytes(g_nv_options.get_packed_bytes(), g_nv_options.get_packed_size())) {
+    if (g_nv_options.validate_checksum()) {
+      Log.trace("Get valid user state; nixie b %d, neon b %d\n", g_nv_options.st.nixie_brightness, g_nv_options.st.neon_brightness);
+    }
+    else {
+      Log.trace("Bad user state; re-init\n");
+      g_nv_options.init();
+      write_nvm();
+    }
+    options.neon_start = g_nv_options.st.neon_brightness;
+  }
 
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
@@ -218,7 +340,7 @@ void update_nixie_unset() {
   nixie_digits[0] = 0;
   // fast flash all decimal points
   for (int i = 0; i < 4; i++) {
-    nixie_dec_state[i] = builtin_led_state ? options.nixie_brightness : 0;
+    nixie_dec_state[i] = builtin_led_state ? g_nv_options.st.nixie_brightness : 0;
   }
 }
 
@@ -255,7 +377,7 @@ void update_nixie_date() {
   nixie_digits[0] = d % 10;
 
   for (int i = 0; i < 4; i++) {
-    nixie_dec_state[i] = options.nixie_brightness;
+    nixie_dec_state[i] = g_nv_options.st.nixie_brightness;
   }
 }
 
@@ -266,7 +388,7 @@ void update_nixie_year() {
   nixie_digits[0] = year(time_state.local) % 10;
 
   for (int i = 0; i < 4; i++) {
-    nixie_dec_state[i] = options.nixie_brightness;
+    nixie_dec_state[i] = g_nv_options.st.nixie_brightness;
   }
 }
 static byte disused3[] = {0, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -290,7 +412,7 @@ void update_nixie_antipoison() {
         disused0[antipoison_cnt % (sizeof(disused0) / sizeof(byte))];
   }
   for (int i = 0; i < 4; i++) {
-    nixie_dec_state[i] = (antipoison_cnt % 2) ? options.nixie_brightness : 0;
+    nixie_dec_state[i] = (antipoison_cnt % 2) ? g_nv_options.st.nixie_brightness : 0;
   }
 
 }
@@ -353,9 +475,9 @@ void pack_shift_data() {
 }
 
 void set_nixie_brightness() {
-  byte pwm = /*gamma8*/ (255 - options.nixie_brightness);
+  byte pwm = /*gamma8*/ (255 - g_nv_options.st.nixie_brightness);
   Serial.print("brightness:");
-  Serial.print(options.nixie_brightness);
+  Serial.print(g_nv_options.st.nixie_brightness);
   Serial.print(" ");
   Serial.println(pwm);
   analogWrite(dimPin, pwm);
@@ -428,6 +550,8 @@ void loop() {
   if (ble_loop(bt_cmd)) {
     cmd_parse(bt_cmd);
   }
+
+  serial_reader.poll();
 }
 
 void cmd_parse(String &bt_cmd) {
@@ -440,10 +564,17 @@ void cmd_parse(String &bt_cmd) {
 
   time_t new_utc = time_state.utc;
   if (bt_cmd.startsWith("B:")) {
-    options.nixie_brightness = v;
-    set_nixie_brightness();
+    if (g_nv_options.st.nixie_brightness != v) {
+      g_nv_options.st.nixie_brightness = v;
+      set_nixie_brightness();
+      write_nvm();
+    }  
   } else if (bt_cmd.startsWith("NB:")) {
     options.neon_start = v;
+    if (g_nv_options.st.neon_brightness != v) {
+      g_nv_options.st.neon_brightness = v;
+      write_nvm();
+    }
   } else if (bt_cmd.startsWith("NM:")) {
     options.neon_mode = v;
   } else if (bt_cmd.startsWith("24:")) {
@@ -484,7 +615,14 @@ void cmd_parse(String &bt_cmd) {
       strlcpy(s, bt_cmd.c_str(), sizeof(s));
       char *pch = strtok(s + bt_cmd.indexOf(':') + 1, " ");
       if (pch != 0) { options.neon_gamma = atoi(pch); pch = strtok(0, " "); }
-      if (pch != 0) { options.neon_start = atoi(pch); pch = strtok(0, " "); }
+      if (pch != 0) { 
+        byte v = atoi(pch);
+        pch = strtok(0, " "); 
+        options.neon_start = v; 
+        if (g_nv_options.st.neon_brightness != v) {
+          g_nv_options.st.neon_brightness = v; 
+        }
+      }
       if (pch != 0) { options.neon_steps = atoi(pch); pch = strtok(0, " "); }
       if (pch != 0) { options.neon_stepsize = atoi(pch); pch = strtok(0, " "); }
       if (pch != 0) { options.neon_timestep = atoi(pch); pch = strtok(0, " "); }
@@ -521,4 +659,8 @@ void printDateTime(time_t t, const char *tz) {
   sprintf(buf, "%.2d:%.2d:%.2d %s %.2d %s %d %s", hour(t), minute(t), second(t),
           dayShortStr(weekday(t)), day(t), m, year(t), tz);
   Serial.println(buf);
+}
+
+void write_nvm() {
+  ds3231_setUserBytes(g_nv_options.get_packed_bytes(), g_nv_options.get_packed_size());
 }
