@@ -22,7 +22,7 @@ bool ds3231_setup() {
   if (rtc.lostPower()) {
     Serial.println("Lost Power");
     // this will adjust to the date and time at compilation
-    //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     rc = false;
   }
 

@@ -23,9 +23,9 @@ const byte PIN_LCD_D4 = 2;
 const byte PIN_LCD_D5 = 3;
 const byte PIN_LCD_D6 = 4;
 const byte PIN_LCD_D7 = 5;
-const byte PIN_LCD_BL_PWM = 20;	// FIXME swapped with Bulb?
+const byte PIN_LCD_BL_PWM = 21;
 
-const byte PIN_BULB_PWM = 21;
+const byte PIN_BULB_PWM = 20;
 
 const byte PIN_TPIC_SCLK = 6;
 const byte PIN_TPIC_RCLK = 7;
@@ -83,6 +83,14 @@ struct nonvolatile_state_t {
   }
 
   bool validate_checksum() {
+    Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
+	      packedBytes[0],
+	      packedBytes[1],
+	      packedBytes[2],
+	      packedBytes[3],
+	      packedBytes[4],
+	      packedBytes[5],
+	      packedBytes[6]);
     unpack();
     uint8_t sum = 255;
     for (int i = 0; i < Size - 1; i++) {
@@ -112,8 +120,8 @@ struct nonvolatile_state_t {
   _( 2,      0,    1,       5,   3) /* lcd_brightness[7:5] - Alarm 1 Hour       */ \
   _( 3,      0,    2,       2,   3) /* colon_brightness[4:2] - Alarm 1 Date       */ \
   _( 4,      0,    2,       5,   3) /* colon_brightness[7:5] - Alarm 2 minutes      */ \
-  _( 4,      4,    7,       1,   2) /* checksum[1:0] - Alarm 2 10 minutes   */ \
-  _( 5,      0,    7,       4,   3) /* checksum[4:2] - Alarm 2 Hours */ \
+  _( 4,      4,    7,       0,   2) /* checksum[1:0] - Alarm 2 10 minutes   */ \
+  _( 5,      0,    7,       2,   3) /* checksum[4:2] - Alarm 2 Hours */ \
   _( 6,      0,    7,       5,   3) /* checksum[7:5] - Alarm 2 Date */
 
   void pack()
@@ -136,8 +144,8 @@ struct nonvolatile_state_t {
 #   undef UNPACK_FIELD
 
     // postprocess - MSB replicate to 8 bits
-    st.colon_brightness |= (st.colon_brightness >> 6);
-    st.lcd_brightness |= (st.lcd_brightness >> 5);
+      //    st.colon_brightness |= (st.colon_brightness >> 6);
+      //    st.lcd_brightness |= (st.lcd_brightness >> 5);
     
   }
 
@@ -282,10 +290,10 @@ private:
   elapsedMillis timer;
 
   void reset_timer() {
-    timer = 5000;
+    timer = 0;
   };
   bool idle() {
-    return st != ST_IDLE;
+    return st == ST_IDLE;
   }
 };
 
@@ -695,8 +703,8 @@ void printDateTime() {
   time_t t = time_state.local;
   char m[4]; // temporary storage for month string (DateStrings.cpp uses shared buffer)
   strlcpy(m, monthShortStr(month(t)), 4);
-  Log.trace("%.2d:%.2d:%.2d %s %.2d %s %d %s", hour(t), minute(t), second(t),
-	    dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
+  //Log.trace("%d:%d:%d %s %d %s %d %s\n", hour(t), minute(t), second(t),
+  //	    dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
 }
 
 void write_nvm() {
@@ -705,11 +713,21 @@ void write_nvm() {
 
 void set_lcd_brightness(byte val)
 {
+  static byte last_b = 0;
+  if (val != last_b) {
+    Log.trace("set_lcd_brightness %d\n", val);
+    last_b = val;
+  }
   analogWrite(PIN_LCD_BL_PWM, val);
 }
 
 void set_colon_brightness(byte val)
 {
+  static byte last_b = 0;
+  if (val != last_b) {
+    Log.trace("set_colon_brightness %d\n", val);
+    last_b = val;
+  }
    analogWrite(PIN_BULB_PWM, val);
 } 
 
@@ -728,7 +746,7 @@ void loop()
   if (buttonTimer > 200) {	// key repeat 200 ms
     buttonTimer = 0;
     digitalWrite(LED_BUILTIN,0);
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
       if (touchRead(PIN_TOUCH[i]) > button_threshold[i]) {
 	Log.trace("button %d\n", i);
 	lcd_menu.button(i);
@@ -741,11 +759,11 @@ void loop()
   set_lcd_brightness(lcd_menu.lcd_enabled() ? g_nv_options.st.lcd_brightness : 0);
   set_colon_brightness(g_nv_options.st.colon_brightness);
   
-  #if 1
+  static byte test_val = 150;
+  #if 0
   display_state = DISP_STATE_TEST;
   const byte DAC_MIN = 5;
   const byte DAC_MAX = 250;
-  static byte test_val = 150;
   static byte test_dir = 0;
 
   if (test_dir==0) {
@@ -795,7 +813,7 @@ void loop()
     for (int i = 0; i < 4; i ++) {
       int val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] + numi_dac_scale + numi_dac_offset);
       tlc5620_dac_write(0, constrain(val, 0, 255));
-      Log.trace("numi b[%d] = %d\n", i, val);
+      //Log.trace("numi b[%d] = %d\n", i, val);
     }
   }
 }
