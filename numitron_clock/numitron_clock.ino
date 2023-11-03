@@ -16,7 +16,7 @@ const byte PIN_DAC_CLK = 10;
 const byte PIN_DAC_DATA = 11;
 const byte PIN_DAC_LOAD = 12;
 
-const byte PIN_TOUCH[] = {22, 23, 16, 15};
+const byte PIN_TOUCH[] = {23, 22, 16, 15};
 
 const byte PIN_LCD_RS = 0;
 const byte PIN_LCD_EN = 1;
@@ -220,7 +220,9 @@ struct time_state_t {
     new_time(false),
     utc(0),
     local(0),
-    tcr(0)
+    tcr(0),
+    twentyfour_hour(false),
+    show_seconds(false)
   {}
   void set_utc(time_t new_utc) {
     if (new_utc != utc) {
@@ -233,6 +235,8 @@ struct time_state_t {
   time_t utc;
   time_t local;
   TimeChangeRule *tcr; // pointer to the time change rule, use to get TZ abbrev
+  bool twentyfour_hour;
+  bool show_seconds;
 };
 time_state_t time_state;
 
@@ -689,10 +693,10 @@ void setup() {
 }
 
 void update_numi_unset() {
-  numi_digits[3] = 1;
-  numi_digits[2] = 2;
-  numi_digits[1] = 0;
-  numi_digits[0] = 0;
+  numi_digits[0] = DIG_DASH;
+  numi_digits[1] = DIG_DASH;
+  numi_digits[2] = DIG_DASH;
+  numi_digits[3] = DIG_DASH;
   for (int i = 0; i < 4; i++) {
     numi_dec_points[i] = 1;
   }
@@ -706,18 +710,18 @@ void update_numi_time() {
     printDateTime();
     prev_min = minute(time_state.local);
   }
-  const byte hour12or24 = /*options.twentyfour_hour ? hour(time_state.local) :*/ hourFormat12(time_state.local);
+  const byte hour12or24 = time_state.twentyfour_hour ? hour(time_state.local) : hourFormat12(time_state.local);
   byte hour10 = hour12or24 / 10;
   hour10 = (hour10 > 0) ? hour10 : DIG_BLANK; // blank leading 0
-  const byte pm = /*options.twentyfour_hour ? 0 :*/ isPM(time_state.local);
-  numi_digits[3] = hour10;
-  numi_digits[2] = hour12or24 % 10;
-  if (0/*options.show_seconds*/) {
-    numi_digits[1] = second(time_state.local) / 10;
-    numi_digits[0] = second(time_state.local) % 10;
+  const byte pm = time_state.twentyfour_hour ? 0 : isPM(time_state.local);
+  numi_digits[0] = hour10;
+  numi_digits[1] = hour12or24 % 10;
+  if (time_state.show_seconds) {
+    numi_digits[2] = second(time_state.local) / 10;
+    numi_digits[3] = second(time_state.local) % 10;
   } else {
-    numi_digits[1] = minute(time_state.local) / 10;
-    numi_digits[0] = minute(time_state.local) % 10;
+    numi_digits[2] = minute(time_state.local) / 10;
+    numi_digits[3] = minute(time_state.local) % 10;
   }
   for (int i = 0; i < 4; i++) {
     numi_dec_points[i] = 0;
@@ -903,6 +907,15 @@ void cmd_parse(String &bt_cmd) {
       time_t local_time = datetime_parse(bt_cmd.substring(bt_cmd.indexOf(':') + 1));
       new_utc = myTZ.toUTC(local_time);
   }
+  else if (bt_cmd.startsWith("gt:")) {
+    printDateTime();
+  }
+  else if (bt_cmd.startsWith("ss:")) {
+    time_state.show_seconds = v;
+  }
+  else if (bt_cmd.startsWith("24:")) {
+    time_state.twentyfour_hour = v;
+  }
   else {
     Log.warning("Bad cmd\n");
   }
@@ -932,7 +945,7 @@ void loop()
   if (buttonTimer > 200) {	// key repeat 200 ms
     buttonTimer = 0;
     digitalWrite(LED_BUILTIN,0);
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 4; i++) {
       if (touchRead(PIN_TOUCH[i]) > button_threshold[i]) {
 	Log.trace("button %d\n", i);
 	lcd_menu.button(i);
@@ -1012,7 +1025,7 @@ void loop()
 	break;
       }
       byte val8 = constrain(val, 0, 255);
-      tlc5620_dac_write(0, val8);
+      tlc5620_dac_write(i, val8);
       if (val8 != last_val[i]) {
         Log.trace("numi final bright[%d] = %d\n", i, val8);
 	last_val[i] = val8;
