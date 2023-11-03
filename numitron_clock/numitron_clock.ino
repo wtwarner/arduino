@@ -10,6 +10,7 @@
 #include <Timezone_Generic.h>
 #include <ArduinoLog.h>
 #include <RTClib.h>
+#include <serial-readline.h>
 
 const byte PIN_DAC_CLK = 10;
 const byte PIN_DAC_DATA = 11;
@@ -70,38 +71,73 @@ struct nonvolatile_state_t {
     memset(unpackedBytes, 0, Size);
     memset(packedBytes, 0, PackedSize);
     st.numi_brightness = 192;
-    st.colon_brightness = 192;
+    st.colon_brightness = 48;
     st.lcd_brightness = 192;
+    adjust_unpacked();
     update_checksum();
   }
 
-  void update_checksum() {
-    st.checksum = 255;
-    for (int i = 0; i < Size - 1; i++) {
-      st.checksum += unpackedBytes[i]; // modulo 8-bit sum
-    }
-  }
-
-  bool validate_checksum() {
-    Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
-	      packedBytes[0],
-	      packedBytes[1],
-	      packedBytes[2],
-	      packedBytes[3],
-	      packedBytes[4],
-	      packedBytes[5],
-	      packedBytes[6]);
-    unpack();
+  uint8_t calc_checksum() {
     uint8_t sum = 255;
     for (int i = 0; i < Size - 1; i++) {
       sum += unpackedBytes[i]; // modulo 8-bit sum
     }
-    return sum == st.checksum;
+    return sum;
+  }
+  
+  void update_checksum() {
+    st.checksum = calc_checksum();
   }
 
-  uint8_t *get_packed_bytes() {
+  bool validate_checksum() {
+     Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
+             packedBytes[0],
+             packedBytes[1],
+             packedBytes[2],
+             packedBytes[3],
+             packedBytes[4],
+             packedBytes[5],
+             packedBytes[6]);
+
+    unpack();
+    Log.trace("ds3231 unpacked %x %x %x %x %x %x %x %x\n",
+             unpackedBytes[0],
+             unpackedBytes[1],
+             unpackedBytes[2],
+             unpackedBytes[3],
+             unpackedBytes[4],
+             unpackedBytes[5],
+             unpackedBytes[6],
+             unpackedBytes[7]);
+
+    adjust_unpacked();
+    return calc_checksum() == st.checksum;
+  }
+
+  void adjust_unpacked() {
+    // MSB replicate for those fields less than 8 bits
+    st.lcd_brightness &= ~0x7;
+    //st.lcd_brightness |= (st.lcd_brightness >> 5);
+    st.colon_brightness &= ~0x3;
+    //st.colon_brightness |= (st.colon_brightness >> 6);
+  }
+
+  uint8_t *get_packed_ptr() {
+    return packedBytes;
+  }
+  
+  const uint8_t *get_packed_bytes() {
+    adjust_unpacked();
     update_checksum();
     pack();
+    Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
+             packedBytes[0],
+             packedBytes[1],
+             packedBytes[2],
+             packedBytes[3],
+             packedBytes[4],
+             packedBytes[5],
+             packedBytes[6]);
     return packedBytes;
   }
 
@@ -160,8 +196,8 @@ struct nonvolatile_state_t {
     uint8_t unpackedBytes[Size];
     struct {
       uint8_t numi_brightness;  // 0..255, 8 bits
-      uint8_t colon_brightness; // 0..255, 6 MSB bits
       uint8_t lcd_brightness;  // 0..255, 5 MSB bits
+      uint8_t colon_brightness; // 0..255, 6 MSB bits
       uint8_t reserved[Size - 3 - 1];
       uint8_t checksum;
     } st;
@@ -217,16 +253,17 @@ elapsedMillis clkTimer;
 
 elapsedMillis numiTimer;
 
-enum { DIG_0=0, DIG_1, DIG_2, DIG_3, DIG_4, DIG_5, DIG_6, DIG_7, DIG_8, DIG_9, DIG_DASH = 10 };
+enum { DIG_0=0, DIG_1, DIG_2, DIG_3, DIG_4, DIG_5, DIG_6, DIG_7, DIG_8, DIG_9, DIG_DASH = 10, DIG_BLANK  };
 byte numi_digits[4] = { DIG_DASH, DIG_DASH, DIG_DASH, DIG_DASH };
 byte numi_dec_points[4] = {0,0,0,0};
+byte test_tpic_data[4] = {0};
 
-enum { DISP_STATE_UNSET, DISP_STATE_TIME, DISP_STATE_DATE, DISP_STATE_YEAR, DISP_STATE_TEST };
+enum { DISP_STATE_UNSET, DISP_STATE_TIME, DISP_STATE_TEST, DISP_STATE_TESTRAW };
 byte display_state = DISP_STATE_UNSET;
 
-#define S(n) (1<<n)
+#define S(n) (1<<(n-2))
 
-static const uint16_t numi_digit_to_segments[11] = {
+static const uint16_t numi_digit_to_segments[12] = {
     S(3)|S(4)|S(5)|S(6)|S(7)|S(8),	/* 0 */
     S(3)|S(4),				/* 1 */
     S(4)|S(5)|S(7)|S(8)|S(9),		/* 2 */
@@ -237,7 +274,8 @@ static const uint16_t numi_digit_to_segments[11] = {
     S(3)|S(4)|S(5),			/* 7 */
     S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 8 */
     S(3)|S(4)|S(5)|S(6)|S(7)|S(9),	/* 9 */
-    S(9)				/* - */ 
+    S(9),         	 		/* - */ 
+    0    				/*   */ 
 };
 
 #undef S
@@ -251,7 +289,7 @@ const float numi_dac_offset = 0.0;
 // LCD Menu
 //
 
-#define MENU_TIMEOUT_PERIOD 5000
+#define MENU_TIMEOUT_PERIOD 60000
 
 class menu_t {
 public:
@@ -338,6 +376,7 @@ void menu_t::button(byte bt_id)
     switch (bt_id) {
     case BT_MENU:
       leaf_item_idx = (leaf_item_idx + 1) % top_items[top_item_idx].leaf_items.size();
+      (*top_items[top_item_idx].leaf_items[leaf_item_idx].func)(top_items[top_item_idx].leaf_items[leaf_item_idx].name, leaf_item_t::ACT_GET, val);
       break;
 
     case BT_UP:
@@ -382,8 +421,14 @@ void menu_t::button(byte bt_id)
       
       lcd.setCursor(12,1);
       lcd.print(val.c_str());
-      for (int i = top_items[top_item_idx].leaf_items[leaf_item_idx].name.size(); i < 4; i ++) { // clear rest of row 1
+      for (int i = val.size(); i < 4; i ++) { // clear rest of value
 	lcd.setCursor(12+i, 1);
+	lcd.write(' ');
+      }
+    }
+    else { // clear 2nd row
+      lcd.setCursor(0,1);
+      for (int i = 0; i < 16; i ++) {
 	lcd.write(' ');
       }
     }
@@ -457,6 +502,7 @@ tmElements_t get_localtm()
 {
   tmElements_t tm;
   breakTime(time_state.local, tm);
+  return tm;
 }
 
 void set_localtm(const tmElements_t &tm)
@@ -570,6 +616,18 @@ std::vector<menu_t::top_item_t> lcd_menu_items = {
 menu_t lcd_menu{lcd, lcd_menu_items};
 
 //
+// Serial port command line
+//
+
+void serial_received(char *s)
+{
+  String str(s);
+  cmd_parse(str);
+}
+
+SerialLineReader<typeof(Serial)>  serial_reader(Serial, serial_received);
+
+//
 // Initialization
 //
 void setup() {
@@ -615,7 +673,7 @@ void setup() {
      // time remains invalid until set by user
    }
 
-   if (ds3231_getUserBytes(g_nv_options.get_packed_bytes(), g_nv_options.get_packed_size())) {
+   if (ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())) {
      if (g_nv_options.validate_checksum()) {
        Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
 		 g_nv_options.st.numi_brightness,
@@ -642,11 +700,15 @@ void update_numi_unset() {
 }
 
 void update_numi_time() {
-  
-  printDateTime();
+
+  static byte prev_min = 0;
+  if (minute(time_state.local) != prev_min) {
+    printDateTime();
+    prev_min = minute(time_state.local);
+  }
   const byte hour12or24 = /*options.twentyfour_hour ? hour(time_state.local) :*/ hourFormat12(time_state.local);
   byte hour10 = hour12or24 / 10;
-  hour10 = (hour10 > 0) ? hour10 : 15; // blank leading 0
+  hour10 = (hour10 > 0) ? hour10 : DIG_BLANK; // blank leading 0
   const byte pm = /*options.twentyfour_hour ? 0 :*/ isPM(time_state.local);
   numi_digits[3] = hour10;
   numi_digits[2] = hour12or24 % 10;
@@ -663,16 +725,16 @@ void update_numi_time() {
   numi_dec_points[1] = pm;
 }
 
-
 void pack_tpic(byte sdi[4]) {
   for (byte i = 0; i < 4; i ++) {
     sdi[i] = numi_digit_to_segments[numi_digits[i]];
-    sdi[i] |= numi_dec_points[i] << 7;
+    sdi[i] |= numi_dec_points[i] & 1;
   }
 }
 
 void update_tpic(const byte sdi[4])
 {
+  static byte prev_sdi[4] = {0};
   for (int i = 0; i < 32; i ++) {
     digitalWrite(PIN_TPIC_SDI, (sdi[i / 8] >> (7 - (i % 8))) & 0x1);
     digitalWrite(PIN_TPIC_SCLK, 1);
@@ -681,6 +743,10 @@ void update_tpic(const byte sdi[4])
   digitalWrite(PIN_TPIC_RCLK, 1);
   digitalWrite(PIN_TPIC_RCLK, 0);
   digitalWrite(PIN_TPIC_OE_, 0);
+  if (memcmp(sdi, prev_sdi, sizeof(prev_sdi))) {
+    Log.trace("update_tpic %x %x %x %x\n", sdi[0], sdi[1], sdi[2], sdi[3]);
+    memcpy(prev_sdi, sdi, sizeof(prev_sdi));
+  }
 }
 
 void tlc5620_dac_write(byte which, byte value)
@@ -691,9 +757,9 @@ void tlc5620_dac_write(byte which, byte value)
       digitalWrite(PIN_DAC_CLK, 1);
       digitalWrite(PIN_DAC_DATA, (v16 >> (10 - b)) & 1);
       digitalWrite(PIN_DAC_CLK, 0);
-    }
-    digitalWrite(PIN_DAC_LOAD, 0);
-    digitalWrite(PIN_DAC_LOAD, 1);
+  }
+  digitalWrite(PIN_DAC_LOAD, 0);
+  digitalWrite(PIN_DAC_LOAD, 1);
 }
 
 void printDateTime() {
@@ -703,8 +769,8 @@ void printDateTime() {
   time_t t = time_state.local;
   char m[4]; // temporary storage for month string (DateStrings.cpp uses shared buffer)
   strlcpy(m, monthShortStr(month(t)), 4);
-  //Log.trace("%d:%d:%d %s %d %s %d %s\n", hour(t), minute(t), second(t),
-  //	    dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
+  Log.trace("%d:%d:%d %s %d %s %d %s\n", hour(t), minute(t), second(t),
+  	    dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
 }
 
 void write_nvm() {
@@ -731,13 +797,133 @@ void set_colon_brightness(byte val)
    analogWrite(PIN_BULB_PWM, val);
 } 
 
+void cmd_parse(String &bt_cmd) {
+  int v = 0, vx = 0;
+  int i;
+  if ((i = bt_cmd.indexOf(':')) >= 0) {
+    String value_s(bt_cmd.substring(i + 1));
+    v = atoi(value_s.c_str());
+    vx = (int)strtol(value_s.c_str(), 0, 16);
+  }
+
+  time_t new_utc = time_state.utc;
+  if (bt_cmd.startsWith("nb:")) {
+    if (g_nv_options.st.numi_brightness != v) {
+      g_nv_options.st.numi_brightness = v;
+      write_nvm();
+    }  
+  }
+  else if (bt_cmd.startsWith("cb:")) {
+    if (g_nv_options.st.colon_brightness != v) {
+      g_nv_options.st.colon_brightness = v;
+      write_nvm();
+    }
+  }
+  else if (bt_cmd.startsWith("lb:")) {
+    if (g_nv_options.st.lcd_brightness != v) {
+      g_nv_options.st.lcd_brightness = v;
+      write_nvm();
+    }
+  }
+  else if (bt_cmd.startsWith("t:")) {
+    display_state = (v == 2) ? DISP_STATE_TESTRAW : (v == 1) ? DISP_STATE_TEST : DISP_STATE_TIME;
+    Log.trace("test state %s\n", (v == 2) ? "TESTRAW" : (v == 1) ? "TEST" : "-");
+  }
+  else if (bt_cmd.startsWith("cs:")) {
+    if (ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())) {
+     if (g_nv_options.validate_checksum()) {
+       Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
+		 g_nv_options.st.numi_brightness,
+		 g_nv_options.st.colon_brightness,
+		 g_nv_options.st.lcd_brightness);
+     }
+     else {
+       Log.warning("Bad user state; re-init\n");
+     }
+   }
+  }
+  else if (bt_cmd.startsWith("s0:")) {
+    test_tpic_data[0] = vx;
+  }
+  else if (bt_cmd.startsWith("s1:")) {
+    test_tpic_data[1] = vx;
+  }
+  else if (bt_cmd.startsWith("s2:")) {
+    test_tpic_data[2] = vx;
+  }
+  else if (bt_cmd.startsWith("s3:")) {
+    test_tpic_data[3] = vx;
+  }
+  else if (bt_cmd.startsWith("d0:")) {
+    numi_digits[0] = v % 11;
+  }
+  else if (bt_cmd.startsWith("d1:")) {
+    numi_digits[1] = v % 11;
+  }
+  else if (bt_cmd.startsWith("d2:")) {
+    numi_digits[2] = v % 11;
+  }
+  else if (bt_cmd.startsWith("d3:")) {
+    numi_digits[3] = v % 11;
+  }
+  else if (bt_cmd.startsWith("dp0:")) {
+    numi_dec_points[0] = v % 2;
+  }
+  else if (bt_cmd.startsWith("dp1:")) {
+    numi_dec_points[1] = v % 2;
+  }
+  else if (bt_cmd.startsWith("dp2:")) {
+    numi_dec_points[2] = v % 2;
+  }
+  else if (bt_cmd.startsWith("dp3:")) {
+    numi_dec_points[3] = v % 2;
+  }
+  else if (bt_cmd.startsWith("mb0:")) {
+    lcd_menu.button(0);
+  }
+  else if (bt_cmd.startsWith("mb1:")) {
+    lcd_menu.button(1);
+  }
+  else if (bt_cmd.startsWith("mb2:")) {
+    lcd_menu.button(2);
+  }
+  else if (bt_cmd.startsWith("mb3:")) {
+    lcd_menu.button(3);
+  }
+  else if (bt_cmd.startsWith("h:") && (v != 0)) {
+    new_utc += v * 3600;
+  }
+  else if (bt_cmd.startsWith("m:") && (v != 0)) {
+    new_utc += v * 60;
+  }
+  else if (bt_cmd.startsWith("s:") && (v != 0)) {
+    new_utc += v;
+  }
+  else if (bt_cmd.startsWith("set-time:")) { // local "ISO 8601" format e.g. 2020-06-25T15:29:37
+      time_t local_time = datetime_parse(bt_cmd.substring(bt_cmd.indexOf(':') + 1));
+      new_utc = myTZ.toUTC(local_time);
+  }
+  else {
+    Log.warning("Bad cmd\n");
+  }
+   
+  if (time_state.utc != new_utc) {
+    time_state.set_utc(new_utc);
+    ds3231_set(new_utc);
+    Log.trace("Set time:\n");
+    printDateTime();
+    display_state = DISP_STATE_TIME;
+  }
+}
+
 //
 // main loop
 //
 
 void loop()
 {
-
+  serial_reader.poll();
+  
   if (clkTimer > 200) {
     time_state.set_utc(ds3231_get_unixtime());
     clkTimer = 0;
@@ -759,7 +945,6 @@ void loop()
   set_lcd_brightness(lcd_menu.lcd_enabled() ? g_nv_options.st.lcd_brightness : 0);
   set_colon_brightness(g_nv_options.st.colon_brightness);
   
-  static byte test_val = 150;
   #if 0
   display_state = DISP_STATE_TEST;
   const byte DAC_MIN = 5;
@@ -804,16 +989,34 @@ void loop()
       break;
       
     case DISP_STATE_TEST:
-      tpic_data[0] = 0xff;
-      numi_raw_brightness[0] = test_val;
+      // numi_digits set by cmd
+      pack_tpic(tpic_data);
       update_tpic(tpic_data);
+      break;
+
+    case DISP_STATE_TESTRAW:
+      // tpic data set by cmd
+      update_tpic(test_tpic_data);
       break;
     }
 
+    static byte last_val[4] = {0};
     for (int i = 0; i < 4; i ++) {
-      int val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] + numi_dac_scale + numi_dac_offset);
-      tlc5620_dac_write(0, constrain(val, 0, 255));
-      //Log.trace("numi b[%d] = %d\n", i, val);
+      int val;
+      switch (display_state) {
+      case DISP_STATE_TESTRAW:
+	val = numi_raw_brightness[i];
+	break;
+      default:
+	val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] + numi_dac_scale + numi_dac_offset);
+	break;
+      }
+      byte val8 = constrain(val, 0, 255);
+      tlc5620_dac_write(0, val8);
+      if (val8 != last_val[i]) {
+        Log.trace("numi final bright[%d] = %d\n", i, val8);
+	last_val[i] = val8;
+      }
     }
   }
 }

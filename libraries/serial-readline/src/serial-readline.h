@@ -52,7 +52,7 @@ public:
 	
 };
 
-
+template <class Serial_>
 class SerialLineReader {
 
 private:
@@ -84,8 +84,34 @@ public:
 	int available() {return queue.size();}
 	int len() {return queue.firstLineLength();}
 	
-	void poll();
-	void read(char*);
+  void poll() {
+	while(hs->available()) {
+//		Read single character and save it in the buffer
+		char c = hs->read();
+		if(buffer_len >= buffer_limit) return;
+		buffer[buffer_len++] = c;
+//		If character saved in the buffer is \n, save this line as independent string, add to the Line Queue and clear the buffer
+		if(c == '\n') {
+			buffer[buffer_len - 1] = 0;
+			char *line = new char[buffer_len];
+			strcpy(line, buffer);
+			queue.add(line);
+			buffer_len = 0;
+		}
+//		If isr is set and line is ready, execute isr (this automatically disposes one line)
+		if(!queue.isEmpty() && isr != NULL) {
+			char *line = queue.get();
+			isr(line);
+			delete line;
+		}
+	}
+  }
+  
+  void read(char* line) {
+    	char *l = queue.get();
+	strcpy(line, l);
+	delete l;
+  }
 
 private:
 	void initialize(Serial_ &hs, int bufsize, void (*isr)(char*)) {
@@ -95,6 +121,5 @@ private:
 		buffer_limit = bufsize;
 	}
 };
-
 
 #endif
