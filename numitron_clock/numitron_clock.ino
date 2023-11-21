@@ -90,26 +90,7 @@ struct nonvolatile_state_t {
   }
 
   bool validate_checksum() {
-     Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
-             packedBytes[0],
-             packedBytes[1],
-             packedBytes[2],
-             packedBytes[3],
-             packedBytes[4],
-             packedBytes[5],
-             packedBytes[6]);
-
     unpack();
-    Log.trace("ds3231 unpacked %x %x %x %x %x %x %x %x\n",
-             unpackedBytes[0],
-             unpackedBytes[1],
-             unpackedBytes[2],
-             unpackedBytes[3],
-             unpackedBytes[4],
-             unpackedBytes[5],
-             unpackedBytes[6],
-             unpackedBytes[7]);
-
     adjust_unpacked();
     return calc_checksum() == st.checksum;
   }
@@ -130,14 +111,6 @@ struct nonvolatile_state_t {
     adjust_unpacked();
     update_checksum();
     pack();
-    Log.trace("ds3231 packed %x %x %x %x %x %x %x\n",
-             packedBytes[0],
-             packedBytes[1],
-             packedBytes[2],
-             packedBytes[3],
-             packedBytes[4],
-             packedBytes[5],
-             packedBytes[6]);
     return packedBytes;
   }
 
@@ -563,7 +536,7 @@ void menu_date_year(const std::string &nm, menu_t::leaf_item_t::action_t action,
     tm.Year --;
   }
   set_localtm(tm);
-  val = std::to_string(tm.Year);
+  val = std::to_string(tm.Year + 1970);  // year 0 = 1970
 }
 
 void menu_date_month(const std::string &nm, menu_t::leaf_item_t::action_t action, std::string &val)
@@ -703,7 +676,8 @@ void update_numi_unset() {
    
 }
 
-void update_numi_time() {
+void update_numi_time()
+{
 
   static byte prev_min = 0;
   if (minute(time_state.local) != prev_min) {
@@ -729,7 +703,8 @@ void update_numi_time() {
   numi_dec_points[1] = pm;
 }
 
-void pack_tpic(byte sdi[4]) {
+void pack_tpic(byte sdi[4])
+{
   for (byte i = 0; i < 4; i ++) {
     sdi[i] = numi_digit_to_segments[numi_digits[i]];
     sdi[i] |= numi_dec_points[i] & 1;
@@ -1021,7 +996,7 @@ void loop()
 	val = numi_raw_brightness[i];
 	break;
       default:
-	val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] + numi_dac_scale + numi_dac_offset);
+	val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] * numi_dac_scale + numi_dac_offset);
 	break;
       }
       byte val8 = constrain(val, 0, 255);
