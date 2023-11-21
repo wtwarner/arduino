@@ -2,6 +2,12 @@
 // Teensy 3.2
 //
 
+// options:
+// IV9: support IV9 Numitron on DB9 connector; else supports IV13
+// DS3234: use DS3234 clock chip on SPI; else uses DS3231 clock chip on I2C
+#define IV9
+#define DS3234
+
 #include <string>
 #include <vector>
 #include <elapsedMillis.h>
@@ -35,6 +41,12 @@ const byte PIN_TPIC_OE_ = 9;
 
 // DS3231 RTC uses i2c: SDA = 18, SCL = 19
 const byte PIN_RTC_SQW = 14;
+
+// DS3234 RTC uses sofware SPI:
+//    CLK 29
+//    MISO 30
+//    MOSI 31
+//    CS 32
 
 //
 // LCD
@@ -216,7 +228,7 @@ time_state_t time_state;
 elapsedMillis clkTimer;
 
 //
-// Numitron
+// Numitron IV-13
 //
 //   ---5--
 //   |    |
@@ -225,6 +237,17 @@ elapsedMillis clkTimer;
 //   |    |
 //   8    3
 //   ---7--
+//          *2
+//
+// Numitron IV-9
+//
+//   ---6--
+//   |    |
+//   5    3
+//   ---4--
+//   |    |
+//   9    7
+//   ---8--
 //          *2
 //
 
@@ -241,6 +264,20 @@ byte display_state = DISP_STATE_UNSET;
 #define S(n) (1<<(n-2))
 
 static const uint16_t numi_digit_to_segments[12] = {
+#ifdef IV9
+    S(3)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 0 */
+    S(3)|S(7),				/* 1 */
+    S(3)|S(4)|S(6)|S(8)|S(9),		/* 2 */
+    S(3)|S(4)|S(6)|S(7)|S(8),		/* 3 */
+    S(3)|S(4)|S(5)|S(7),		/* 4 */
+    S(4)|S(5)|S(6)|S(7)|S(8),		/* 5 */
+    S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 6 */
+    S(3)|S(6)|S(7),			/* 7 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 8 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8),	/* 9 */
+    S(4),         	 		/* - */ 
+    0    				/*   */ 
+#else
     S(3)|S(4)|S(5)|S(6)|S(7)|S(8),	/* 0 */
     S(3)|S(4),				/* 1 */
     S(4)|S(5)|S(7)|S(8)|S(9),		/* 2 */
@@ -253,7 +290,8 @@ static const uint16_t numi_digit_to_segments[12] = {
     S(3)|S(4)|S(5)|S(6)|S(7)|S(9),	/* 9 */
     S(9),         	 		/* - */ 
     0    				/*   */ 
-};
+#endif
+      };
 
 #undef S
 
@@ -486,7 +524,11 @@ void set_localtm(const tmElements_t &tm)
 {
   time_t new_local = makeTime(tm);
   time_state.set_utc(myTZ.toUTC(new_local));
+  #ifdef DS3234
+  ds3234_set(time_state.utc);
+  #else
   ds3231_set(time_state.utc);
+  #endif
   if (display_state == DISP_STATE_UNSET) {
     display_state = DISP_STATE_TIME;
   }
@@ -638,6 +680,19 @@ void setup() {
    lcd.begin(16, 2);
 
    pinMode(PIN_RTC_SQW, INPUT_PULLUP);
+   #ifdef DS3234
+   if (ds3234_setup()) {
+     Log.trace("ds3234_setup succeeded\n");
+     time_state.set_utc(ds3234_get_unixtime());
+     Log.trace("Local time: ");
+     printDateTime();
+     display_state = DISP_STATE_TIME;
+   }
+   else {
+     Serial.println("ds3234_setup failed");
+     // time remains invalid until set by user
+   }
+   #else
    if (ds3231_setup()) {
      Log.trace("ds3231_setup succeeded\n");
      time_state.set_utc(ds3231_get_unixtime());
@@ -649,8 +704,15 @@ void setup() {
      Serial.println("ds3231_setup failed");
      // time remains invalid until set by user
    }
+   #endif
 
-   if (ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())) {
+   if (
+    #ifdef DS3234
+    ds3234_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())
+    #else
+    ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())
+    #endif
+    ) {
      if (g_nv_options.validate_checksum()) {
        Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
 		 g_nv_options.st.numi_brightness,
@@ -753,7 +815,11 @@ void printDateTime() {
 }
 
 void write_nvm() {
+  #ifdef DS3234
+  ds3234_setUserBytes(g_nv_options.get_packed_bytes(), g_nv_options.get_packed_size());
+  #else
   ds3231_setUserBytes(g_nv_options.get_packed_bytes(), g_nv_options.get_packed_size());
+  #endif
 }
 
 void set_lcd_brightness(byte val)
@@ -809,7 +875,13 @@ void cmd_parse(String &bt_cmd) {
     Log.trace("test state %s\n", (v == 2) ? "TESTRAW" : (v == 1) ? "TEST" : "-");
   }
   else if (bt_cmd.startsWith("cs:")) {
-    if (ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())) {
+    if (
+      #ifdef DS3234
+      ds3234_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())
+      #else
+      ds3231_getUserBytes(g_nv_options.get_packed_ptr(), g_nv_options.get_packed_size())
+      #endif
+      ) {
      if (g_nv_options.validate_checksum()) {
        Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
 		 g_nv_options.st.numi_brightness,
@@ -897,7 +969,11 @@ void cmd_parse(String &bt_cmd) {
    
   if (time_state.utc != new_utc) {
     time_state.set_utc(new_utc);
+    #ifdef DS3234
+    ds3234_set(new_utc);
+    #else
     ds3231_set(new_utc);
+    #endif
     Log.trace("Set time:\n");
     printDateTime();
     display_state = DISP_STATE_TIME;
@@ -912,8 +988,14 @@ void loop()
 {
   serial_reader.poll();
   
-  if (clkTimer > 200) {
-    time_state.set_utc(ds3231_get_unixtime());
+  if (clkTimer > 333) {
+    time_state.set_utc(
+    #ifdef DS3234
+    ds3234_get_unixtime()
+    #else
+    ds3231_get_unixtime()
+    #endif
+    );
     clkTimer = 0;
   }
 
