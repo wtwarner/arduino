@@ -461,6 +461,7 @@ void menu_t::button(byte bt_id)
 
 #ifdef OLED
   if (!idle()) {
+    display.ssd1306_command(SSD1306_DISPLAYON);
     display.clearDisplay();
     display.setTextSize(2);      // Normal 1:1 pixel scale
     display.setTextColor(SSD1306_WHITE); // Draw white text
@@ -765,6 +766,7 @@ void setup() {
 #ifdef OLED
   sw.begin();
   display.begin();
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
 #else
    // set up the LCD's number of columns and rows:
    digitalWrite(PIN_LCD_BL_PWM, 0);
