@@ -16,7 +16,6 @@
 #include <ArduinoLog.h>
 #include <serial-readline.h>
 
-
 extern bool ds3231_setup(int clockSqwPin, void (*isr)(void));
 
 //
@@ -50,7 +49,7 @@ public:
         //nixie_brightness = 192;
         twentyfour_hour = false;
         show_seconds = false;
-        neon_gamma = true;
+        neon_gamma = false;
         neon_start = 192;
         neon_off = 1;
         neon_steps = 100;
@@ -186,7 +185,7 @@ void serial_received(char *s)
   cmd_parse(str);
 }
 
-SerialLineReader serial_reader(Serial, serial_received);
+SerialLineReader<Stream> serial_reader(Serial, serial_received);
 
 //
 // TimeZone
@@ -265,8 +264,10 @@ void setup() {
   pinMode(dimPin, OUTPUT);
   pinMode(neonPins[0], OUTPUT);
   pinMode(neonPins[1], OUTPUT);
-  for (int i = 0; i < 4; i++) {
+  
+  for (int i = 1; i < 4; i++) {
     pinMode(nixie_dec_pins[i], OUTPUT);
+   
   }
   pinMode(clockSqwPin, INPUT_PULLUP);
 
@@ -285,6 +286,7 @@ void setup() {
     }
     options.neon_start = g_nv_options.st.neon_brightness;
   }
+  set_nixie_brightness();
 
   timer.every(250, toggle_builtin_led);
   timer.every(200, check_time);
@@ -295,6 +297,7 @@ void setup() {
 
   neon_state.reset();
   neon_state.timer_handle = timer.every(options.neon_timestep, toggle_neon);
+
 }
 
 void onehz_interrupt() {
@@ -321,8 +324,8 @@ void shift_out_nixie() {
   }
   digitalWrite(latchPin, HIGH);
   
-  for (int i = 0; i < 4; i++) {
-    digitalWrite(nixie_dec_pins[i], nixie_dec_state[i] ? 1 : 0); // 255-nixie_dec_state[i]);
+  for (int i = 1; i < 2; i++) { // FIXME dec_pin[0] is bad
+    analogWrite(nixie_dec_pins[i], nixie_dec_state[i] ? g_nv_options.st.nixie_brightness : 0); // 255-nixie_dec_state[i]);
   }
 }
 
@@ -345,8 +348,11 @@ void update_nixie_unset() {
 }
 
 void update_nixie_time() {
-  
-  printDateTime(time_state.local, tcr->abbrev);
+  static int prev_min = 0;
+  if (time_state.local / 60 != prev_min) {
+      printDateTime(time_state.local, tcr->abbrev);
+      prev_min = time_state.local / 60;
+  }
   const byte hour12or24 = options.twentyfour_hour ? hour(time_state.local) : hourFormat12(time_state.local);
   byte hour10 = hour12or24 / 10;
   hour10 = (hour10 > 0) ? hour10 : 15; // blank leading 0

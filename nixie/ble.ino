@@ -18,9 +18,11 @@
 
 #include <ArduinoBLE.h>
 
-BLEService nixieService("ffe0"); // create service
-BLEStringCharacteristic sCharacteristic("FFE1",
-                                        BLERead | BLEWriteWithoutResponse, 64);
+BLEService nixieService("903b13ce-eadb-482f-b8fa-a5a2ecffffb4"); // create service
+BLEStringCharacteristic sCharacteristic("2BDE", // FixedString64
+                                        BLEWriteWithoutResponse|BLENotify, 64);
+//BLEStringCharacteristic sRspCharacteristic("2A05", // Service Changed
+//                                        BLERead, 64);
 BLEDescriptor sDescriptor("2901", "Nixie command");
 
 void ble_setup() {
@@ -40,11 +42,13 @@ void ble_setup() {
 
   // add the characteristic to the service
   nixieService.addCharacteristic(sCharacteristic);
+  //nixieService.addCharacteristic(sRspCharacteristic);
+
   // add service
   BLE.addService(nixieService);
 
   // set an initial value for the characteristic
-  sCharacteristic.setValue("");
+  sCharacteristic.writeValue("----");
 
   // start advertising
   BLE.advertise();
@@ -54,19 +58,27 @@ void ble_setup() {
 
 bool ble_loop(String &cmd) {
   // poll for BLE events
+  static bool has_central = false;
 
   BLEDevice central = BLE.central();
-  if (central && sCharacteristic.written()) {
+    if (central && !has_central) {
+      Serial.println("BT Connected");
+    }
+    if (!central && has_central) {
+      Serial.println("BT Disconnected");
+    }
+ if (central && sCharacteristic.written()) {
     cmd = sCharacteristic.value();
 
     Serial.println("BT cmd: ");
     Serial.println(cmd);
     return true;
   }
+  has_central = central;
   return false;
 }
 
 void ble_output(String &s)
 {
-  sCharacteristic.setValue(s);
+  sCharacteristic.writeValue(s);
 }
