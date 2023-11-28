@@ -1,0 +1,11 @@
+SIZEOF
+sizeof(TwoWireInterface): 4
+sizeof(SimpleWireInterface): 5
+BENCHMARKS
+SimpleWireInterface,1us 816 819 867 20
+TwoWireInterface<TwoWire>,100kHz 1105 1113 1251 20
+TwoWireInterface<TwoWire>,400kHz 229 229 229 20
+FeliasFoggWireInterface<SlowSoftWire> 828 831 895 20
+RaemondWireInterface<SoftWire> 988 992 1059 20
+SeeedWireInterface<SoftwareI2C> 598 601 650 20
+END

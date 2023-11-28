@@ -5,8 +5,10 @@
 // options:
 // IV9: support IV9 Numitron on DB9 connector; else supports IV13
 // DS3234: use DS3234 clock chip on SPI; else uses DS3231 clock chip on I2C
+// OLED: use OLED display (SSD1306 128x32 I2C) instead of LCD
 #define IV9
 #define DS3234
+#define OLED
 
 #include <string>
 #include <vector>
@@ -18,12 +20,24 @@
 #include <RTClib.h>
 #include <serial-readline.h>
 
+#ifdef OLED
+#include <AceWire.h>
+//#include <AsyncDelay.h>
+#define SSD1306_NO_SPLASH
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#endif
+
 const byte PIN_DAC_CLK = 10;
 const byte PIN_DAC_DATA = 11;
 const byte PIN_DAC_LOAD = 12;
 
 const byte PIN_TOUCH[] = {23, 22, 16, 15};
 
+#ifdef OLED
+const byte PIN_OLED_SCL = 0;
+const byte PIN_OLED_SDA = 1;
+#else
 const byte PIN_LCD_RS = 0;
 const byte PIN_LCD_EN = 1;
 const byte PIN_LCD_D4 = 2;
@@ -31,6 +45,7 @@ const byte PIN_LCD_D5 = 3;
 const byte PIN_LCD_D6 = 4;
 const byte PIN_LCD_D7 = 5;
 const byte PIN_LCD_BL_PWM = 21;
+#endif
 
 const byte PIN_BULB_PWM = 20;
 
@@ -49,9 +64,19 @@ const byte PIN_RTC_SQW = 14;
 //    CS 32
 
 //
-// LCD
+// LCD / OLED
 //
+#ifdef OLED
+using ace_wire::SimpleWireInterface;
+using WireInterface = SimpleWireInterface;
+WireInterface sw(PIN_OLED_SDA, PIN_OLED_SCL, 5 /*uS delay*/);
+// These buffers must be at least as large as the largest read or write you perform.
+Adafruit_SSD1306 display(128, 32, &sw);
+
+#else
 LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5, PIN_LCD_D6, PIN_LCD_D7);
+#endif
+
 
 //
 // TimeZone
@@ -319,7 +344,11 @@ public:
     std::vector<leaf_item_t> leaf_items;
   };
 
+#ifdef OLED
+  menu_t(Adafruit_SSD1306 &display, const std::vector<top_item_t> &top_items);
+#else
   menu_t(LiquidCrystal &lcd, const std::vector<top_item_t> &top_items);
+#endif  
   void button(byte bt_id);
 
   void tick();
@@ -334,7 +363,11 @@ private:
   };
 
   const std::vector<top_item_t> &top_items;
+#ifdef OLED
+  Adafruit_SSD1306 &display;
+#else
   LiquidCrystal &lcd;
+#endif
 
   int top_item_idx;
   int leaf_item_idx;
@@ -352,9 +385,19 @@ private:
 
 const char *menu_t::st_name[3] = { "idle", "top", "leaf" };
 
-menu_t::menu_t(LiquidCrystal &lcd, const std::vector<top_item_t> &top_items):
+menu_t::menu_t(
+#ifdef OLED
+  Adafruit_SSD1306 &display,
+#else
+   LiquidCrystal &lcd, 
+#endif
+  const std::vector<top_item_t> &top_items):
   top_items(top_items),
+#ifdef OLED
+  display(display),
+#else
   lcd(lcd),
+#endif
   top_item_idx(0),
   leaf_item_idx(0),
   st(ST_IDLE)
@@ -416,8 +459,36 @@ void menu_t::button(byte bt_id)
     st = next_st;
   }
 
+#ifdef OLED
   if (!idle()) {
-    lcd.display();
+    display.clearDisplay();
+    display.setTextSize(2);      // Normal 1:1 pixel scale
+    display.setTextColor(SSD1306_WHITE); // Draw white text
+    display.setCursor(0, 0);     // Start at top-left corner
+  //display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+    display.println(top_items[top_item_idx].name.c_str());
+    Log.trace("menu %s.\n", top_items[top_item_idx].name.c_str());
+
+    if (st == ST_LEAF) {
+      display.setCursor(0,16);
+      display.print(top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str());
+      Log.trace("menu   .%s = %s\n", top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str(), val.c_str());
+      
+      
+      display.setCursor(80,16);
+      display.print(val.c_str());
+      
+    }
+    
+    display.display();
+  }
+  else {
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
+  }
+#else
+  if (!idle()) {
+      lcd.display();
     lcd.setCursor(0,0);
     lcd.print(top_items[top_item_idx].name.c_str());
     Log.trace("menu %s.\n", top_items[top_item_idx].name.c_str());
@@ -430,27 +501,28 @@ void menu_t::button(byte bt_id)
       lcd.print(top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str());
       Log.trace("menu   .%s = %s\n", top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str(), val.c_str());
       for (int i = top_items[top_item_idx].leaf_items[leaf_item_idx].name.size(); i < 12; i ++) { // clear rest of name
-	lcd.setCursor(i, 1);
-	lcd.write(' ');
+	      lcd.setCursor(i, 1);
+	      lcd.write(' ');
       }
       
       lcd.setCursor(12,1);
       lcd.print(val.c_str());
       for (int i = val.size(); i < 4; i ++) { // clear rest of value
-	lcd.setCursor(12+i, 1);
-	lcd.write(' ');
+	      lcd.setCursor(12+i, 1);
+	      lcd.write(' ');
       }
     }
     else { // clear 2nd row
       lcd.setCursor(0,1);
       for (int i = 0; i < 16; i ++) {
-	lcd.write(' ');
+	      lcd.write(' ');
       }
     }
   }
   else {
     lcd.noDisplay();
   }
+#endif
 
   reset_timer();
 }
@@ -459,7 +531,11 @@ void menu_t::tick()
 {
   if (!idle() && timer > MENU_TIMEOUT_PERIOD) {
     st = ST_IDLE;
+#ifdef OLED
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
+#else
     lcd.noDisplay();
+#endif
     Log.trace("menu off\n");
   }
 }
@@ -611,8 +687,14 @@ void menu_date_day(const std::string &nm, menu_t::leaf_item_t::action_t action, 
 std::vector<menu_t::top_item_t> lcd_menu_items = {
   { "Brightness",
     {
-      { "LCD", menu_brightness_lcd },
-      { "Numbers", menu_brightness_numi },
+      { 
+#ifdef OLED
+        "Screen",
+#else       
+        "LCD",
+#endif
+        menu_brightness_lcd },
+      { "Digits", menu_brightness_numi },
       { "Colon", menu_brightness_colon },
     }
   },
@@ -632,7 +714,13 @@ std::vector<menu_t::top_item_t> lcd_menu_items = {
   },
 };
 
-menu_t lcd_menu{lcd, lcd_menu_items};
+menu_t lcd_menu{
+  #ifdef OLED
+  display,
+  #else
+  lcd, 
+  #endif
+  lcd_menu_items};
 
 //
 // Serial port command line
@@ -674,10 +762,15 @@ void setup() {
    digitalWrite(PIN_BULB_PWM, 0);
    pinMode(PIN_BULB_PWM, OUTPUT);
 
+#ifdef OLED
+  sw.begin();
+  display.begin();
+#else
    // set up the LCD's number of columns and rows:
    digitalWrite(PIN_LCD_BL_PWM, 0);
    pinMode(PIN_LCD_BL_PWM, OUTPUT);
    lcd.begin(16, 2);
+#endif
 
    pinMode(PIN_RTC_SQW, INPUT_PULLUP);
    #ifdef DS3234
@@ -829,7 +922,10 @@ void set_lcd_brightness(byte val)
     Log.trace("set_lcd_brightness %d\n", val);
     last_b = val;
   }
+#ifdef OLED
+#else
   analogWrite(PIN_LCD_BL_PWM, val);
+#endif
 }
 
 void set_colon_brightness(byte val)
