@@ -6,9 +6,11 @@
 // IV9: support IV9 Numitron on DB9 connector; else supports IV13
 // DS3234: use DS3234 clock chip on SPI; else uses DS3231 clock chip on I2C
 // OLED: use OLED display (SSD1306 128x32 I2C) instead of LCD
+// BAD23: touch pad 23 bad, use 33 instead
 #define IV9
 #define DS3234
 #define OLED
+#define BAD23
 
 #include <string>
 #include <vector>
@@ -32,7 +34,13 @@ const byte PIN_DAC_CLK = 10;
 const byte PIN_DAC_DATA = 11;
 const byte PIN_DAC_LOAD = 12;
 
-const byte PIN_TOUCH[] = {23, 22, 16, 15};
+const byte PIN_TOUCH[] = {
+  #ifdef BAD23
+  33, 
+  #else
+  23
+  #endif
+  22, 16, 15};
 
 #ifdef OLED
 const byte PIN_OLED_SCL = 0;
@@ -93,7 +101,7 @@ Timezone myTZ(myPDT, myPST);
 // buttons
 //
 elapsedMillis buttonTimer;
-const int button_threshold[4] = {2000, 2000, 2000, 2000};
+const int button_threshold[4] = {2500, 2500, 2500, 2500};
 
 //
 // non-volatile state
@@ -290,31 +298,31 @@ byte display_state = DISP_STATE_UNSET;
 
 static const uint16_t numi_digit_to_segments[12] = {
 #ifdef IV9
-    S(3)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 0 */
-    S(3)|S(7),				/* 1 */
-    S(3)|S(4)|S(6)|S(8)|S(9),		/* 2 */
-    S(3)|S(4)|S(6)|S(7)|S(8),		/* 3 */
-    S(3)|S(4)|S(5)|S(7),		/* 4 */
-    S(4)|S(5)|S(6)|S(7)|S(8),		/* 5 */
-    S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 6 */
-    S(3)|S(6)|S(7),			/* 7 */
-    S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 8 */
-    S(3)|S(4)|S(5)|S(6)|S(7)|S(8),	/* 9 */
-    S(4),         	 		/* - */ 
-    0    				/*   */ 
+    S(3)|S(5)|S(6)|S(7)|S(8)|S(9),      /* 0 */
+    S(3)|S(7),                          /* 1 */
+    S(3)|S(4)|S(6)|S(8)|S(9),           /* 2 */
+    S(3)|S(4)|S(6)|S(7)|S(8),           /* 3 */
+    S(3)|S(4)|S(5)|S(7),                /* 4 */
+    S(4)|S(5)|S(6)|S(7)|S(8),           /* 5 */
+    S(4)|S(5)|S(6)|S(7)|S(8)|S(9),      /* 6 */
+    S(3)|S(6)|S(7),                     /* 7 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9), /* 8 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8),      /* 9 */
+    S(4),                               /* - */ 
+    0                                   /*   */ 
 #else
-    S(3)|S(4)|S(5)|S(6)|S(7)|S(8),	/* 0 */
-    S(3)|S(4),				/* 1 */
-    S(4)|S(5)|S(7)|S(8)|S(9),		/* 2 */
-    S(3)|S(4)|S(5)|S(7)|S(9),		/* 3 */
-    S(3)|S(4)|S(6)|S(9),		/* 4 */
-    S(3)|S(5)|S(6)|S(7)|S(9),		/* 5 */
-    S(3)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 6 */
-    S(3)|S(4)|S(5),			/* 7 */
-    S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9),	/* 8 */
-    S(3)|S(4)|S(5)|S(6)|S(7)|S(9),	/* 9 */
-    S(9),         	 		/* - */ 
-    0    				/*   */ 
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8),      /* 0 */
+    S(3)|S(4),                          /* 1 */
+    S(4)|S(5)|S(7)|S(8)|S(9),           /* 2 */
+    S(3)|S(4)|S(5)|S(7)|S(9),           /* 3 */
+    S(3)|S(4)|S(6)|S(9),                /* 4 */
+    S(3)|S(5)|S(6)|S(7)|S(9),           /* 5 */
+    S(3)|S(5)|S(6)|S(7)|S(8)|S(9),      /* 6 */
+    S(3)|S(4)|S(5),                     /* 7 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(8)|S(9), /* 8 */
+    S(3)|S(4)|S(5)|S(6)|S(7)|S(9),      /* 9 */
+    S(9),                               /* - */ 
+    0                                   /*   */ 
 #endif
       };
 
@@ -502,21 +510,21 @@ void menu_t::button(byte bt_id)
       lcd.print(top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str());
       Log.trace("menu   .%s = %s\n", top_items[top_item_idx].leaf_items[leaf_item_idx].name.c_str(), val.c_str());
       for (int i = top_items[top_item_idx].leaf_items[leaf_item_idx].name.size(); i < 12; i ++) { // clear rest of name
-	      lcd.setCursor(i, 1);
-	      lcd.write(' ');
+              lcd.setCursor(i, 1);
+              lcd.write(' ');
       }
       
       lcd.setCursor(12,1);
       lcd.print(val.c_str());
       for (int i = val.size(); i < 4; i ++) { // clear rest of value
-	      lcd.setCursor(12+i, 1);
-	      lcd.write(' ');
+              lcd.setCursor(12+i, 1);
+              lcd.write(' ');
       }
     }
     else { // clear 2nd row
       lcd.setCursor(0,1);
       for (int i = 0; i < 16; i ++) {
-	      lcd.write(' ');
+              lcd.write(' ');
       }
     }
   }
@@ -648,10 +656,10 @@ void menu_time_sec(const std::string &nm, menu_t::leaf_item_t::action_t action, 
 void menu_date_year(const std::string &nm, menu_t::leaf_item_t::action_t action, std::string &val)
 {
   tmElements_t tm(get_localtm());
-  if (action == menu_t::leaf_item_t::ACT_UP && tm.Year < 9999) {
+  if (action == menu_t::leaf_item_t::ACT_UP && tm.Year < 199) {
     tm.Year ++;
   }
-  else if (action == menu_t::leaf_item_t::ACT_DOWN && tm.Year > 1970) {
+  else if (action == menu_t::leaf_item_t::ACT_DOWN && tm.Year > 0) {
     tm.Year --;
   }
   set_localtm(tm);
@@ -743,7 +751,7 @@ void setup() {
    Log.begin(LOG_LEVEL_VERBOSE, &Serial);
    Log.trace("Starting\n");
 
-   pinMode(LED_BUILTIN, OUTPUT);
+   //pinMode(LED_BUILTIN, OUTPUT);
   
    digitalWrite(PIN_DAC_LOAD, 1);
    digitalWrite(PIN_DAC_CLK, 0);
@@ -810,9 +818,9 @@ void setup() {
     ) {
      if (g_nv_options.validate_checksum()) {
        Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
-		 g_nv_options.st.numi_brightness,
-		 g_nv_options.st.colon_brightness,
-		 g_nv_options.st.lcd_brightness);
+                 g_nv_options.st.numi_brightness,
+                 g_nv_options.st.colon_brightness,
+                 g_nv_options.st.lcd_brightness);
      }
      else {
        Log.trace("Bad user state; re-init\n");
@@ -906,7 +914,7 @@ void printDateTime() {
   char m[4]; // temporary storage for month string (DateStrings.cpp uses shared buffer)
   strlcpy(m, monthShortStr(month(t)), 4);
   Log.trace("%d:%d:%d %s %d %s %d %s\n", hour(t), minute(t), second(t),
-  	    dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
+            dayShortStr(weekday(t)), day(t), m, year(t), time_state.tcr->abbrev);
 }
 
 void write_nvm() {
@@ -982,9 +990,9 @@ void cmd_parse(String &bt_cmd) {
       ) {
      if (g_nv_options.validate_checksum()) {
        Log.trace("Get valid user state; numi b %d, colon b %d, lcd b %d\n",
-		 g_nv_options.st.numi_brightness,
-		 g_nv_options.st.colon_brightness,
-		 g_nv_options.st.lcd_brightness);
+                 g_nv_options.st.numi_brightness,
+                 g_nv_options.st.colon_brightness,
+                 g_nv_options.st.lcd_brightness);
      }
      else {
        Log.warning("Bad user state; re-init\n");
@@ -1097,15 +1105,18 @@ void loop()
     clkTimer = 0;
   }
 
-  if (buttonTimer > 200) {	// key repeat 200 ms
+  if (buttonTimer > 200) {      // key repeat 200 ms
     buttonTimer = 0;
-    digitalWrite(LED_BUILTIN,0);
+    //digitalWrite(LED_BUILTIN,0);
+    int button[4];
     for (int i = 0; i < 4; i++) {
-      if (touchRead(PIN_TOUCH[i]) > button_threshold[i]) {
-	Log.trace("button %d\n", i);
-	lcd_menu.button(i);
+      button[i] = touchRead(PIN_TOUCH[i]);
+      if (button[i] > button_threshold[i]) {
+        Log.trace("button %d\n", i);
+        lcd_menu.button(i);
       }
     }
+    Log.trace("%d, %d, %d, %d\n", button[0], button[1], button[2], button[3]);
   }
 
   lcd_menu.tick();
@@ -1149,10 +1160,10 @@ void loop()
 
     case DISP_STATE_TIME:
       if (time_state.new_time) {
-	time_state.new_time = false;
-	update_numi_time();
-	pack_tpic(tpic_data);
-	update_tpic(tpic_data);
+        time_state.new_time = false;
+        update_numi_time();
+        pack_tpic(tpic_data);
+        update_tpic(tpic_data);
       }
       break;
       
@@ -1173,17 +1184,17 @@ void loop()
       int val;
       switch (display_state) {
       case DISP_STATE_TESTRAW:
-	val = numi_raw_brightness[i];
-	break;
+        val = numi_raw_brightness[i];
+        break;
       default:
-	val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] * numi_dac_scale + numi_dac_offset);
-	break;
+        val = (int)roundf((numi_brightness_scale[ __builtin_popcount(numi_digits[i]) + numi_dec_points[i] ]) * (float)numi_raw_brightness[i] * numi_dac_scale + numi_dac_offset);
+        break;
       }
       byte val8 = constrain(val, 0, 255);
       tlc5620_dac_write(i, val8);
       if (val8 != last_val[i]) {
         Log.trace("numi final bright[%d] = %d\n", i, val8);
-	last_val[i] = val8;
+        last_val[i] = val8;
       }
     }
   }
