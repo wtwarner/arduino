@@ -500,6 +500,26 @@ void do_test_vfd() {
       }
       cnt = (cnt + 1) % 24;
       break;
+
+    case 3:
+      for (uint8_t tube=0; tube < 12; tube ++) {
+	      if (tube == (((cnt/8) & 1) ? 1 : 2)) {
+	        for (uint8_t seg = 0 ; seg < NUM_SEG_PER_TUBE; seg ++) {
+	            sdi_d[TUBE(tube,0)] |= 1 << map_seg_to_bit[seg];
+	            sdi_d[TUBE(tube,1)] |= 1 << map_seg_to_bit[seg];
+	          }
+	      }
+	      else if (tube == (((cnt/8) & 1) ? 2 : 1)) {
+	        for (uint8_t seg = 0 ; seg < NUM_SEG_PER_TUBE; seg ++) {
+	          sdi_d[TUBE(tube,0)] |= 1 << map_seg_to_bit[seg];
+	        }
+	      }
+	      else {
+	        sdi_d[TUBE(tube,0)] |= 1;
+	      }
+      }
+      cnt = (cnt + 1) % 24;
+      break;
   }
   update_vfd();
 
