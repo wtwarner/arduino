@@ -7,10 +7,10 @@
 // DS3234: use DS3234 clock chip on SPI; else uses DS3231 clock chip on I2C
 // OLED: use OLED display (SSD1306 128x32 I2C) instead of LCD
 // BAD23: touch pad 23 bad, use 33 instead
-#define IV9
-#define DS3234
-#define OLED
-#define BAD23
+// #define IV9
+// #define DS3234
+// #define OLED
+// #define BAD23
 
 #include <string>
 #include <vector>
@@ -38,7 +38,7 @@ const byte PIN_TOUCH[] = {
   #ifdef BAD23
   33, 
   #else
-  23
+  23,
   #endif
   22, 16, 15};
 
