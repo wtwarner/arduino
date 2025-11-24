@@ -64,8 +64,8 @@ void loop() {
    shiftOut(vfd_seg_map[t][SEG_H] << tube_shift[t]);
    delay(D);
   }
+  shiftOut(0x0000);
+
    #endif
 
-   shiftOut(0x0000);
-   delay(D);
 }
