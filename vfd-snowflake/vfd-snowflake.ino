@@ -175,3 +175,17 @@ void test1() {
     delay(200);
   }
 }
+
+void circle_outward() {
+  for (byte r = 0; r < NUM_RAD; r++) {
+    for (byte s = 0; s < NUM_SEG; s++) {
+      clear_vfd();
+      for (byte a = 0; a < vfd_per_radius[r]; a++) {
+        vfd_state[r][a][s] = 1;
+      }
+      pack_vfd();
+      send_vfd();
+      delay(200);
+    }
+  }
+}
