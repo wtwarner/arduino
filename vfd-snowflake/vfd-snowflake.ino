@@ -118,7 +118,7 @@ void setup() {
   OCR1A = 128;
   OCR1B = 128;
   // Mode 1: CTC, top = OCR1A
-  Timer1::setMode (1, Timer1::PRESCALE_256, Timer1::CLEAR_A_ON_COMPARE | Timer1::SET_B_ON_COMPARE);
+  Timer1::setMode (1, Timer1::PRESCALE_1024, Timer1::CLEAR_A_ON_COMPARE | Timer1::SET_B_ON_COMPARE);
 #else
   digitalWrite(PAD_FIL0, 1);
   digitalWrite(PAD_FIL1, 0);
@@ -201,12 +201,8 @@ void circle_outward() {
       }
       pack_vfd();
       send_vfd();
-      delay(200);
+      delay(100);
     }
   }
-  clear_vfd();
-  pack_vfd();
-  send_vfd();
-  delay(500);
 }
 
