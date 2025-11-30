@@ -1,7 +1,7 @@
 
 // VFD "snowflake" controller.
 //
-// Elegoo Nano 3.0 (ATMega328 old bootloader)
+// Elegoo Nano 3.0 (ATMega328 old bootloader or sometimes new bootloader)
 //
 // This controller talks to 10 sub-controllers.
 // 16 bit shift register per sub-controller (for 4 VFD tubes => 12 segments). 
@@ -15,6 +15,7 @@
 
 #include "TimerHelpers.h"
 #define USE_PROGMEM
+#define FIL_AC
 
 const int PAD_SD1=3, PAD_SCLK=2, PAD_RCLK=4, PAD_SD2=5; // shift register
 const int PAD_FIL0=9, PAD_FIL1=10;  // filament "A/C" waveform
@@ -59,10 +60,10 @@ vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
     {{ 2,0,1}, 2, 0 }, // 45 deg.
     {{ 2,0,1}, 1, 0 }, // 90 deg
     {{ 2,0,1}, 0, 0 }, // 135 deg.
+    {{ 2,0,1}, 9, 0 },
     {{ 2,0,1}, 8, 0 },
     {{ 2,0,1}, 7, 0 },
-    {{ 2,0,1}, 6, 0 },
-    {{ 2,0,1}, 5, 0 }, // 225 deg.
+    {{ 2,0,1}, 6, 0 }, // 225 deg.
   },
   // outer ring
   {
@@ -82,6 +83,10 @@ vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
     {{ 1,0,2}, 0, 2 },
     {{ 1,0,2}, 0, 1 }, 
 
+    {{ 1,0,2}, 9, 3 },
+    {{ 1,0,2}, 9, 2 },
+    {{ 1,0,2}, 9, 1 }, 
+    
     {{ 1,0,2}, 8, 3 },
     {{ 1,0,2}, 8, 2 },
     {{ 1,0,2}, 8, 1 },
@@ -94,9 +99,7 @@ vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
     {{ 1,0,2}, 6, 2 }, 
     {{ 1,0,2}, 6, 1 },
 
-    {{ 1,0,2}, 5, 3 },
-    {{ 1,0,2}, 5, 2 },
-    {{ 1,0,2}, 5, 1 }, 
+
   }
 };
 
@@ -112,8 +115,24 @@ void setup() {
   pinMode(PAD_FIL1, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
-#if 1
-  // set up Timer 0 for filament "A/C"; 2 pins opposite polarity
+  clear_vfd();
+  pack_vfd();
+  send_vfd();
+  fil_enable();
+
+  // initialize ADC for measuring VCC
+  ADCSRA &= ~_BV( ADEN ); 
+  delay(1);
+  ADMUX = (0<<REFS1) | (1<<REFS0) | (0<<ADLAR) | (1<<MUX3) | (1<<MUX2) | (1<<MUX1) | (0<<MUX0);
+  ADCSRA |= _BV( ADEN );
+  delay(1);
+  Serial.print("start "); Serial.println(getVoltage());
+}
+
+void fil_enable()
+{
+#ifdef FIL_AC
+  // set up Timer 1 for filament "A/C"; 2 pins opposite polarity
   TCNT0 = 0;
   OCR1A = 128;
   OCR1B = 128;
@@ -123,10 +142,26 @@ void setup() {
   digitalWrite(PAD_FIL0, 1);
   digitalWrite(PAD_FIL1, 0);
 #endif
+  digitalWrite(LED_BUILTIN,1);
+}
 
-  clear_vfd();
-  pack_vfd();
-  send_vfd();
+void fil_disable()
+{
+  TCCR1A = 0;
+  TCCR1B = 0;
+  digitalWrite(PAD_FIL0, 0);
+  digitalWrite(PAD_FIL1, 0);
+  digitalWrite(LED_BUILTIN,0);
+}
+
+int getVoltage(void) {
+  const long InternalReferenceVoltage = 1091L; // Adjust this value to your boards specific internal BG voltage x1000
+
+  ADCSRA |= _BV( ADSC ); // Start a conversion 
+  while( (ADCSRA & _BV( ADSC )) != 0  ) // Wait for it to complete
+      ; 
+  int results = (((InternalReferenceVoltage * 1024L) / ADC) + 5L) / 10L; // Scale the value; calculates for straight line value
+  return results*10; // convert from centivolts to millivolts
 }
 
 void clear_vfd() {
@@ -174,7 +209,17 @@ void send_vfd()
 }
 
 void loop() {
- circle_outward();
+  // turn off filament if voltage sags
+  int v = getVoltage();
+  Serial.println(v);
+  if (TCCR1B != 0 && v < 4500) {
+    fil_disable();
+  }
+  else if (TCCR1B == 0 && v > 4700) {
+    fil_enable();
+  }
+
+  circle_outward();
 }
 
 void test1() {
@@ -188,7 +233,7 @@ void test1() {
     pack_vfd();
     send_vfd();
     delay(500);
-    digitalWrite(LED_BUILTIN,s&1);
+    
   }
 }
 
