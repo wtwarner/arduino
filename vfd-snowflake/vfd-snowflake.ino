@@ -114,35 +114,43 @@ void setup() {
   pinMode(PAD_FIL0, OUTPUT);
   pinMode(PAD_FIL1, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, 1);
+
+  analogReference(INTERNAL);
+  fil_disable();
 
   clear_vfd();
   pack_vfd();
   send_vfd();
-  fil_enable();
+}
 
-  // initialize ADC for measuring VCC
-  ADCSRA &= ~_BV( ADEN ); 
-  delay(1);
-  ADMUX = (0<<REFS1) | (1<<REFS0) | (0<<ADLAR) | (1<<MUX3) | (1<<MUX2) | (1<<MUX1) | (0<<MUX0);
-  ADCSRA |= _BV( ADEN );
-  delay(1);
-  Serial.print("start "); Serial.println(getVoltage());
+static byte timer1_isr_state = 0;
+ISR (TIMER1_OVF_vect)
+{
+  const uint16_t period = 1000 + random(1500);
+  ICR1 = period;
+  OCR1A = period/2;
+  OCR1B = period/2;
 }
 
 void fil_enable()
 {
 #ifdef FIL_AC
   // set up Timer 1 for filament "A/C"; 2 pins opposite polarity
-  TCNT0 = 0;
-  OCR1A = 128;
-  OCR1B = 128;
+  TCNT1 = 0;
+  ICR1 = 2500;
+  TIMSK1 = bit (TOIE1);   // enable interrupt
+
   // Mode 1: CTC, top = OCR1A
-  Timer1::setMode (1, Timer1::PRESCALE_1024, Timer1::CLEAR_A_ON_COMPARE | Timer1::SET_B_ON_COMPARE);
+  Timer1::setMode (10, Timer1::PRESCALE_64, Timer1::CLEAR_A_ON_COMPARE | Timer1::SET_B_ON_COMPARE);
+  OCR1A = 1250;
+  OCR1B = 1250;
 #else
   digitalWrite(PAD_FIL0, 1);
   digitalWrite(PAD_FIL1, 0);
 #endif
   digitalWrite(LED_BUILTIN,1);
+  Serial.println("A/C enable");
 }
 
 void fil_disable()
@@ -152,16 +160,17 @@ void fil_disable()
   digitalWrite(PAD_FIL0, 0);
   digitalWrite(PAD_FIL1, 0);
   digitalWrite(LED_BUILTIN,0);
+  Serial.println("A/C disable");
 }
 
 int getVoltage(void) {
-  const long InternalReferenceVoltage = 1091L; // Adjust this value to your boards specific internal BG voltage x1000
-
-  ADCSRA |= _BV( ADSC ); // Start a conversion 
-  while( (ADCSRA & _BV( ADSC )) != 0  ) // Wait for it to complete
-      ; 
-  int results = (((InternalReferenceVoltage * 1024L) / ADC) + 5L) / 10L; // Scale the value; calculates for straight line value
-  return results*10; // convert from centivolts to millivolts
+  long a = analogRead(A7);
+  // pin has Vcc * 1/(1+4.7).  ADC 0..1023 is 0..1.1V.
+  long mv = a * 1100l/1023l;
+  long scaled_mv = mv * 5700l/1000l;
+  //Serial.print("raw "); Serial.print(a); Serial.print("; raw mV "); Serial.print(mv);
+  //Serial.print("; scaled mV "); Serial.println(scaled_mv);
+  return scaled_mv;
 }
 
 void clear_vfd() {
@@ -208,18 +217,34 @@ void send_vfd()
   digitalWrite(PAD_RCLK, 0);
 }
 
-void loop() {
+void checkVoltage()
+{
   // turn off filament if voltage sags
-  int v = getVoltage();
-  Serial.println(v);
+  const int v = getVoltage();
   if (TCCR1B != 0 && v < 4500) {
     fil_disable();
   }
   else if (TCCR1B == 0 && v > 4700) {
     fil_enable();
   }
+}
 
-  circle_outward();
+byte pattern = 0;
+unsigned long patternMillis = 0;
+const byte NUM_PATTERN = 3;
+
+void loop() {
+  checkVoltage();
+
+  switch (pattern) {
+    case 0: circle_outward(); break;
+    case 1: test1(); break;
+    default: all1(); break;
+  }
+  if (millis() - patternMillis > 10000l) {
+    patternMillis = millis();
+    pattern = (pattern + 1) % NUM_PATTERN;
+  }
 }
 
 void test1() {
@@ -232,11 +257,25 @@ void test1() {
     }
     pack_vfd();
     send_vfd();
-    delay(500);
+    delay(200);
     
   }
 }
 
+void all1() {
+  clear_vfd();
+  for (byte s = 0; s < NUM_SEG; s++) {
+    for (byte r = 0; r < NUM_RAD; r++) {
+      for (byte a = 0; a < vfd_per_radius[r]; a++) {
+        vfd_state[r][a][s] = 1;
+      }
+    }
+  }
+  pack_vfd();
+  send_vfd();
+  delay(100);
+
+}
 void circle_outward() {
   for (byte r = 0; r < 3; r++) {
     for (byte s = 0; s < NUM_SEG; s++) {
@@ -246,7 +285,7 @@ void circle_outward() {
       }
       pack_vfd();
       send_vfd();
-      delay(100);
+      delay(120);
     }
   }
 }
