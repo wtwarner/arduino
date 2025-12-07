@@ -20,7 +20,7 @@
 const int PAD_SD1=3, PAD_SCLK=2, PAD_RCLK=4, PAD_SD2=5; // shift register
 const int PAD_FIL0=9, PAD_FIL1=10;  // filament "A/C" waveform
 
-void clear_vfd();
+void clear_vfd(byte polarity=0);
 void pack_vfd();
 void send_vfd();
 
@@ -173,14 +173,8 @@ int getVoltage(void) {
   return scaled_mv;
 }
 
-void clear_vfd() {
-  for (byte r = 0; r < NUM_RAD; r++) {  // radius
-    for (byte a = 0; a < 24; a++) {
-      for (byte s = 0; s < NUM_SEG; s ++) {
-        vfd_state[r][a][s] = 0;
-      }
-    }
-  }
+void clear_vfd(byte value = 0) { 
+  memset(&vfd_state, value, sizeof(vfd_state));
 }
 
 void pack_vfd()
@@ -231,28 +225,31 @@ void checkVoltage()
 
 byte pattern = 0;
 unsigned long patternMillis = 0;
-const byte NUM_PATTERN = 3;
+const byte NUM_PATTERN = 5;
 
 void loop() {
   checkVoltage();
 
   switch (pattern) {
-    case 0: circle_outward(); break;
-    case 1: test1(); break;
+    case 0: circle_outward(1); break;
+    case 1: circle_outward(1); break;
+    case 2: test1(0); break;
+    case 3: test1(1); break;
+    case 4: rotate(); break;
     default: all1(); break;
   }
-  if (millis() - patternMillis > 10000l) {
+  if (millis() - patternMillis > 5000l) {
     patternMillis = millis();
     pattern = (pattern + 1) % NUM_PATTERN;
   }
 }
 
-void test1() {
+void test1(byte polarity) {
   for (byte s = 0; s < NUM_SEG; s++) {
-    clear_vfd();
+    clear_vfd(!polarity);
     for (byte r = 0; r < NUM_RAD; r++) {
       for (byte a = 0; a < vfd_per_radius[r]; a++) {
-        vfd_state[r][a][s] = 1;
+        vfd_state[r][a][s] = polarity;
       }
     }
     pack_vfd();
@@ -263,25 +260,19 @@ void test1() {
 }
 
 void all1() {
-  clear_vfd();
-  for (byte s = 0; s < NUM_SEG; s++) {
-    for (byte r = 0; r < NUM_RAD; r++) {
-      for (byte a = 0; a < vfd_per_radius[r]; a++) {
-        vfd_state[r][a][s] = 1;
-      }
-    }
-  }
+  clear_vfd(1);
   pack_vfd();
   send_vfd();
   delay(100);
 
 }
-void circle_outward() {
+
+void circle_outward(byte polarity) {
   for (byte r = 0; r < 3; r++) {
     for (byte s = 0; s < NUM_SEG; s++) {
-      clear_vfd();
+      clear_vfd(!polarity);
       for (byte a = 0; a < vfd_per_radius[r]; a++) {
-         vfd_state[r][a][s] = 1;
+         vfd_state[r][a][s] = polarity;
       }
       pack_vfd();
       send_vfd();
@@ -290,3 +281,16 @@ void circle_outward() {
   }
 }
 
+void rotate(byte polarity) {
+  for (byte a = 0; a < 24; a++) {
+    clear_vfd();
+    for (byte r = 0; r < 3; r++) {
+      for (byte s = 0; s < NUM_SEG; s++) {
+        vfd_state[r][a / (24/vfd_per_radius[r])][s] = 1;
+      }
+    }
+    pack_vfd();
+    send_vfd();
+    delay(200);
+  }
+}

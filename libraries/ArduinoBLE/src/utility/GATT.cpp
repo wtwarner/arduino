@@ -28,50 +28,84 @@
 #include "GATT.h"
 
 GATTClass::GATTClass() :
-  _genericAccessService("1800"),
-  _deviceNameCharacteristic("2a00", BLERead, 20),
-  _appearanceCharacteristic("2a01", BLERead, 2),
-  _genericAttributeService("1801"),
-  _servicesChangedCharacteristic("2a05", BLEIndicate, 4)
+  _genericAccessService(NULL),
+  _deviceNameCharacteristic(NULL),
+  _appearanceCharacteristic(NULL),
+  _genericAttributeService(NULL),
+  _servicesChangedCharacteristic(NULL)
 {
-  _genericAccessService.retain();
-  _genericAttributeService.retain();
-
-  _genericAccessService.addCharacteristic(&_deviceNameCharacteristic);
-  _genericAccessService.addCharacteristic(&_appearanceCharacteristic);
-
-  _genericAttributeService.addCharacteristic(&_servicesChangedCharacteristic);
 }
 
 GATTClass::~GATTClass()
 {
-  clearAttributes();
+  end();
 }
 
 void GATTClass::begin()
 {
+  _genericAccessService = new BLELocalService("1800");
+  _deviceNameCharacteristic = new BLELocalCharacteristic("2a00", BLERead, 20);
+  _appearanceCharacteristic = new BLELocalCharacteristic("2a01", BLERead, 2);
+  _genericAttributeService = new BLELocalService("1801");
+  _servicesChangedCharacteristic = new BLELocalCharacteristic("2a05", BLEIndicate, 4);
+
+  _genericAccessService->retain();
+  _deviceNameCharacteristic->retain();
+  _appearanceCharacteristic->retain();
+  _genericAttributeService->retain();
+  _servicesChangedCharacteristic->retain();
+
+  _genericAccessService->addCharacteristic(_deviceNameCharacteristic);
+  _genericAccessService->addCharacteristic(_appearanceCharacteristic);
+  _genericAttributeService->addCharacteristic(_servicesChangedCharacteristic);
+
   setDeviceName("Arduino");
   setAppearance(0x000);
 
   clearAttributes();
 
-  addService(&_genericAccessService);
-  addService(&_genericAttributeService);
+  addService(_genericAccessService);
+  addService(_genericAttributeService);
 }
 
 void GATTClass::end()
 {
-  _attributes.clear();
+  if (_genericAccessService && _genericAccessService->release() == 0) {
+    delete(_genericAccessService);
+    _genericAccessService = NULL;
+  }
+
+  if (_deviceNameCharacteristic && _deviceNameCharacteristic->release() == 0) {
+    delete(_deviceNameCharacteristic);
+    _deviceNameCharacteristic = NULL;
+  }
+
+  if (_appearanceCharacteristic && _appearanceCharacteristic->release() == 0) {
+    delete(_appearanceCharacteristic);
+    _appearanceCharacteristic = NULL;
+  }
+
+  if (_genericAttributeService && _genericAttributeService->release() == 0) {
+    delete(_genericAttributeService);
+    _genericAttributeService = NULL;
+  }
+
+  if (_servicesChangedCharacteristic && _servicesChangedCharacteristic->release() == 0) {
+    delete(_servicesChangedCharacteristic);
+    _servicesChangedCharacteristic = NULL;
+  }
+
+  clearAttributes();
 }
 
 void GATTClass::setDeviceName(const char* deviceName)
 {
-  _deviceNameCharacteristic.writeValue(deviceName);
+  _deviceNameCharacteristic->writeValue(deviceName);
 }
 
 void GATTClass::setAppearance(uint16_t appearance)
 {
-  _appearanceCharacteristic.writeValue((uint8_t*)&appearance, sizeof(appearance));
+  _appearanceCharacteristic->writeValue((uint8_t*)&appearance, sizeof(appearance));
 }
 
 void GATTClass::addService(BLEService& service)
@@ -125,6 +159,7 @@ void GATTClass::addService(BLELocalService* service)
 {
   service->retain();
   _attributes.add(service);
+  _services.add(service);
 
   uint16_t startHandle = attributeCount();
 
@@ -136,6 +171,7 @@ void GATTClass::addService(BLELocalService* service)
     characteristic->setHandle(attributeCount());
     
     // add the characteristic again to make space of the characteristic value handle
+    characteristic->retain();
     _attributes.add(characteristic);
 
     for (unsigned int j = 0; j < characteristic->descriptorCount(); j++) {
@@ -155,12 +191,20 @@ void GATTClass::clearAttributes()
   for (unsigned int i = 0; i < attributeCount(); i++) {
     BLELocalAttribute* a = attribute(i);
 
-    if (a->release() <= 0) {
+    if (a->release() == 0) {
       delete a;
     }
   }
-
   _attributes.clear();
+
+  for (unsigned int i = 0; i < _services.size(); i++) {
+    _services.get(i)->clear();
+  }
+  _services.clear();
+
 }
 
-GATTClass GATT;
+#if !defined(FAKE_GATT)
+GATTClass GATTObj;
+GATTClass& GATT = GATTObj;
+#endif

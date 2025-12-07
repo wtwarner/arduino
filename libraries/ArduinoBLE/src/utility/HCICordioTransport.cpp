@@ -17,13 +17,17 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#if defined(ARDUINO_ARCH_MBED)
+#if defined(ARDUINO_ARCH_MBED) && !defined(TARGET_NANO_RP2040_CONNECT) // && !defined(CORE_CM4)
+#include <Arduino.h>
+#include <mbed.h>
 
 #include <driver/CordioHCITransportDriver.h>
 #include <driver/CordioHCIDriver.h>
 
-#include <Arduino.h>
-#include <mbed.h>
+#if defined(ARDUINO_PORTENTA_H7_M4) || defined(ARDUINO_PORTENTA_H7_M7) || defined(ARDUINO_NICLA_VISION) || defined(ARDUINO_GIGA) || defined(ARDUINO_OPTA)
+#include "ble/BLE.h"
+#include <events/mbed_events.h>
+#endif
 
 // Parts of this file are based on: https://github.com/ARMmbed/mbed-os-cordio-hci-passthrough/pull/2
 // With permission from the Arm Mbed team to re-license
@@ -42,35 +46,40 @@
 
 #include "HCICordioTransport.h"
 
-extern ble::vendor::cordio::CordioHCIDriver& ble_cordio_get_hci_driver();
+#if (MBED_VERSION > MBED_ENCODE_VERSION(6, 2, 0))
+#define BLE_NAMESPACE ble 
+#else
+#define BLE_NAMESPACE ble::vendor::cordio
+#endif
 
-namespace ble {
-  namespace vendor {
-    namespace cordio {
-      struct CordioHCIHook {
-          static CordioHCIDriver& getDriver() {
-              return ble_cordio_get_hci_driver();
-          }
+#include "CordioHCICustomDriver.h"
 
-          static CordioHCITransportDriver& getTransportDriver() {
-              return getDriver()._transport_driver;
-          }
+extern BLE_NAMESPACE::CordioHCIDriver& ble_cordio_get_hci_driver();
+extern "C" void hciTrSerialRxIncoming(uint8_t *pBuf, uint8_t len);
 
-          static void setDataReceivedHandler(void (*handler)(uint8_t*, uint8_t)) {
-              getTransportDriver().set_data_received_handler(handler);
-          }
-      };
+namespace BLE_NAMESPACE {
+  struct CordioHCIHook {
+    static CordioHCIDriver& getDriver() {
+      return ble_cordio_get_hci_driver();
     }
-  }
+
+    static CordioHCITransportDriver& getTransportDriver() {
+      return getDriver()._transport_driver;
+    }
+
+    static void setDataReceivedHandler(void (*handler)(uint8_t*, uint8_t)) {
+      getTransportDriver().set_data_received_handler(handler);
+    }
+  };
 }
 
-using ble::vendor::cordio::CordioHCIHook;
+using BLE_NAMESPACE::CordioHCIHook;
 
 #if CORDIO_ZERO_COPY_HCI
 extern uint8_t *SystemHeapStart;
 extern uint32_t SystemHeapSize;
 
-void init_wsf(ble::vendor::cordio::buf_pool_desc_t& buf_pool_desc) {
+void init_wsf(BLE_NAMESPACE::buf_pool_desc_t& buf_pool_desc) {
     static bool init = false;
 
     if (init) {
@@ -162,7 +171,7 @@ static void bleLoop()
 }
 
 static rtos::EventFlags bleEventFlags; 
-static rtos::Thread bleLoopThread;
+static rtos::Thread* bleLoopThread = NULL;
 
 
 HCICordioTransportClass::HCICordioTransportClass() :
@@ -174,19 +183,45 @@ HCICordioTransportClass::~HCICordioTransportClass()
 {
 }
 
+#if (defined(ARDUINO_PORTENTA_H7_M4) || defined(ARDUINO_PORTENTA_H7_M7) || defined(ARDUINO_NICLA_VISION) || defined(ARDUINO_GIGA) || defined(ARDUINO_OPTA)) && !defined(CUSTOM_HCI_DRIVER)
+events::EventQueue eventQueue(10 * EVENTS_EVENT_SIZE);
+void scheduleMbedBleEvents(BLE::OnEventsToProcessCallbackContext *context) {
+  eventQueue.call(mbed::Callback<void()>(&context->ble, &BLE::processEvents));
+}
+
+void completeCallback(BLE::InitializationCompleteCallbackContext *context) {
+  eventQueue.break_dispatch();
+}
+#endif
+
 int HCICordioTransportClass::begin()
 {
   _rxBuf.clear();
 
 #if CORDIO_ZERO_COPY_HCI
-  ble::vendor::cordio::buf_pool_desc_t bufPoolDesc = CordioHCIHook::getDriver().get_buffer_pool_description();
+  BLE_NAMESPACE::buf_pool_desc_t bufPoolDesc = CordioHCIHook::getDriver().get_buffer_pool_description();
   init_wsf(bufPoolDesc);
 #endif
 
-  CordioHCIHook::getDriver().initialize();
-  CordioHCIHook::getDriver().start_reset_sequence();
+#if (defined(ARDUINO_PORTENTA_H7_M4) || defined(ARDUINO_PORTENTA_H7_M7) || defined(ARDUINO_NICLA_VISION) || defined(ARDUINO_GIGA) || defined(ARDUINO_OPTA)) && !defined(CUSTOM_HCI_DRIVER)
 
-  bleLoopThread.start(bleLoop);
+  BLE &ble = BLE::Instance();
+  ble.onEventsToProcess(scheduleMbedBleEvents);
+
+  ble.init(completeCallback);
+  eventQueue.dispatch(10000);
+
+  if (!ble.hasInitialized()){
+    return 0;
+  } 
+#else 
+  CordioHCIHook::getDriver().initialize();
+#endif
+
+  if (bleLoopThread == NULL) {
+    bleLoopThread = new rtos::Thread();
+    bleLoopThread->start(bleLoop);
+  }
 
   CordioHCIHook::setDataReceivedHandler(HCICordioTransportClass::onDataReceived);
 
@@ -197,17 +232,33 @@ int HCICordioTransportClass::begin()
 
 void HCICordioTransportClass::end()
 {
-  bleLoopThread.terminate();
+  if (bleLoopThread != NULL) {
+    bleLoopThread->terminate();
+    delete bleLoopThread;
+    bleLoopThread = NULL;
+  }
+  // Reset the callback with the mbed-os default handler to properly handle the following CYW43xxx chip initializations and begins
+  CordioHCIHook::setDataReceivedHandler(hciTrSerialRxIncoming);
 
+#if (defined(ARDUINO_PORTENTA_H7_M4) || defined(ARDUINO_PORTENTA_H7_M7) || defined(ARDUINO_NICLA_VISION) || defined(ARDUINO_GIGA) || defined(ARDUINO_OPTA)) && !defined(CUSTOM_HCI_DRIVER)
+  BLE &ble = BLE::Instance();
+  ble.shutdown();
+#endif
+
+#if !defined(TARGET_STM32H7)
   CordioHCIHook::getDriver().terminate();
+#endif
 
   _begun = false;
 }
 
 void HCICordioTransportClass::wait(unsigned long timeout)
 {
-  if (available()) {
-    return;
+  {
+    mbed::CriticalSectionLock critical_section;
+    if (available()) {
+      return;
+    }
   }
 
   // wait for handleRxData to signal
@@ -227,6 +278,14 @@ int HCICordioTransportClass::peek()
 int HCICordioTransportClass::read()
 {
   return _rxBuf.read_char();
+}
+
+void HCICordioTransportClass::lockForRead() {
+  mbed::CriticalSectionLock::enable();
+}
+
+void HCICordioTransportClass::unlockForRead() {
+  mbed::CriticalSectionLock::disable();
 }
 
 size_t HCICordioTransportClass::write(const uint8_t* data, size_t length)
@@ -251,13 +310,16 @@ size_t HCICordioTransportClass::write(const uint8_t* data, size_t length)
 
 void HCICordioTransportClass::handleRxData(uint8_t* data, uint8_t len)
 {
-  if (_rxBuf.availableForStore() < len) {
-    // drop!
-    return;
-  }
+  {
+    mbed::CriticalSectionLock critical_section;
+    if (_rxBuf.availableForStore() < len) {
+      // drop!
+      return;
+    }
 
-  for (int i = 0; i < len; i++) {
-    _rxBuf.store_char(data[i]);
+    for (int i = 0; i < len; i++) {
+      _rxBuf.store_char(data[i]);
+    }
   }
 
   bleEventFlags.set(0x01);
