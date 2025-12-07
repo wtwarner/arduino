@@ -48,10 +48,11 @@ const
 vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
   // inner ring
   { 
-    {{ 0,1,2}, 4, 3 }, // 45 deg.
-    {{ 1,0,2}, 4, 2 }, // 135 deg.
-    {{ 1,0,2}, 4, 1 }, // 225 deg.
-    {{ 1,0,2}, 4, 0 }, // 315 deg. 
+ 
+    {{ 1,0,2}, 4, 2 },  // 45 deg.
+    {{ 1,0,2}, 4, 0 }, 
+    {{ 1,0,2}, 4, 1 }, 
+    {{ 0,1,2}, 4, 3 }, 
     {{0}}
   }, 
   // mid ring
@@ -232,13 +233,14 @@ void loop() {
 
   switch (pattern) {
     case 0: circle_outward(1); break;
-    case 1: circle_outward(1); break;
+    case 1: circle_outward(0); break;
     case 2: test1(0); break;
-    case 3: test1(1); break;
-    case 4: rotate(); break;
+    case 3: rotate(0); break;
+    case 4: rotate(1); break;
     default: all1(); break;
   }
-  if (millis() - patternMillis > 5000l) {
+
+  if (millis() - patternMillis > 8000l) {
     patternMillis = millis();
     pattern = (pattern + 1) % NUM_PATTERN;
   }
@@ -281,16 +283,20 @@ void circle_outward(byte polarity) {
   }
 }
 
-void rotate(byte polarity) {
-  for (byte a = 0; a < 24; a++) {
+void rotate(byte dir) {
+  for (byte a = dir ? 25 : 0; dir ? (a > 0) : (a < 25); a += dir ? -1 : 1) {
     clear_vfd();
     for (byte r = 0; r < 3; r++) {
+      byte a_offset = (r == 0) ? 3 : 0;
       for (byte s = 0; s < NUM_SEG; s++) {
-        vfd_state[r][a / (24/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        //vfd_state[r][(a + 6 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 12 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        //vfd_state[r][(a + 18 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
       }
     }
     pack_vfd();
     send_vfd();
-    delay(200);
+    delay(50);
   }
 }
