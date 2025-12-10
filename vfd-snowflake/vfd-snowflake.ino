@@ -226,7 +226,7 @@ void checkVoltage()
 
 byte pattern = 0;
 unsigned long patternMillis = 0;
-const byte NUM_PATTERN = 5;
+const byte NUM_PATTERN = 7;
 
 void loop() {
   checkVoltage();
@@ -237,6 +237,8 @@ void loop() {
     case 2: test1(0); break;
     case 3: rotate(0); break;
     case 4: rotate(1); break;
+    case 5: spiral(0); break;
+    case 6: spiral(1); break;
     default: all1(); break;
   }
 
@@ -298,5 +300,21 @@ void rotate(byte dir) {
     pack_vfd();
     send_vfd();
     delay(50);
+  }
+}
+
+void spiral(byte polarity) {
+  int stepDelay = 60;
+  clear_vfd(!polarity);
+
+  for (byte r = 0; r < NUM_RAD; r++) {
+    for (byte s = 0; s < NUM_SEG; s++) {
+      for (byte a = 0; a < vfd_per_radius[r]; a++) {
+        vfd_state[r][a][s] = polarity;
+        pack_vfd();
+        send_vfd();
+        delay(stepDelay);
+      }
+    }
   }
 }
