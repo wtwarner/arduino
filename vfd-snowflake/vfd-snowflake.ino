@@ -292,9 +292,9 @@ void rotate(byte dir) {
       byte a_offset = (r == 0) ? 3 : 0;
       for (byte s = 0; s < NUM_SEG; s++) {
         vfd_state[r][(a + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
-        //vfd_state[r][(a + 6 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 6 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
         vfd_state[r][(a + 12 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
-        //vfd_state[r][(a + 18 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 18 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
       }
     }
     pack_vfd();
