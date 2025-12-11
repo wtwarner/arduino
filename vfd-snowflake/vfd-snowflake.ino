@@ -231,6 +231,9 @@ const byte NUM_PATTERN = 7;
 void loop() {
   checkVoltage();
 
+#if 0
+  spiral(0);
+#else
   switch (pattern) {
     case 0: circle_outward(1); break;
     case 1: circle_outward(0); break;
@@ -241,7 +244,7 @@ void loop() {
     case 6: spiral(1); break;
     default: all1(); break;
   }
-
+#endif
   if (millis() - patternMillis > 8000l) {
     patternMillis = millis();
     pattern = (pattern + 1) % NUM_PATTERN;
@@ -304,7 +307,7 @@ void rotate(byte dir) {
 }
 
 void spiral(byte polarity) {
-  int stepDelay = 60;
+  int stepDelay = 40;
   clear_vfd(!polarity);
 
   for (byte r = 0; r < NUM_RAD; r++) {
