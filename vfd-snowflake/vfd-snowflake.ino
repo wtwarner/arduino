@@ -45,8 +45,11 @@ byte vfd_state[NUM_RAD][24][NUM_SEG];
 
 struct {
   bool enable;
-  byte pattern; // 255 = switch
-} g_state = {true, 255};
+  uint16_t pattern;
+  bool timerEnable;
+  byte onTimeH, onTimeM;
+  byte offTimeH, offTimeM;
+} g_state = {true, 65535, false};
 
 const 
 #ifdef USE_PROGMEM
@@ -154,17 +157,22 @@ enum { I2C_CMD_FIRST = 0x80,
   I2C_CMD_CURTIME,   // Unix time_t LSB first
   I2C_CMD_ONTIME, // H then M
   I2C_CMD_OFFTIME, // H then M
+  I2C_CMD_ENTIMER, // enable
   I2C_CMD_LAST};
 
 void i2cRequestEvent()
 {
   Serial.print("i2c read "); Serial.println(i2c_cmd, HEX);
-   byte resp[1] = {0};
+   byte resp[2] = {0};
+   byte respCount = 1;
    switch (i2c_cmd) {
     case I2C_CMD_POWER: resp[0] = g_state.enable; break;
-    case I2C_CMD_PATTERN: resp[0] = g_state.pattern; break;
+    case I2C_CMD_PATTERN: resp[0] = g_state.pattern & 0xff; resp[1] = (g_state.pattern >> 8) & 0xff; respCount = 2; break;
+    case I2C_CMD_ENTIMER: resp[0] = g_state.timerEnable; break;
+    case I2C_CMD_ONTIME: resp[0] = g_state.onTimeH; resp[1] = g_state.onTimeM; respCount = 2; break;
+    case I2C_CMD_OFFTIME: resp[0] = g_state.offTimeH; resp[1] = g_state.offTimeM; respCount = 2; break;
    }
-   Wire.write(resp, 1);
+   Wire.write(resp, respCount);
    i2c_cmd_valid = 0;
 }
 
@@ -188,8 +196,13 @@ void i2cReceiveEvent(int howMany) {
           break;
         case I2C_CMD_PATTERN:
           c = Wire.read();
-          g_state.pattern = c;
-          Serial.print("pattern: "); Serial.println(c,HEX);
+          g_state.pattern = c | (Wire.read() << 8);
+          Serial.print("pattern: "); Serial.println(g_state.pattern,HEX);
+          break;
+        case I2C_CMD_ENTIMER:
+          c = Wire.read();
+          g_state.timerEnable = c;
+          Serial.print("timerEnable: "); Serial.println(c,HEX);
           break;
         case I2C_CMD_CURTIME:
         {
@@ -206,6 +219,8 @@ void i2cReceiveEvent(int howMany) {
         {
           byte h = Wire.read();
           byte m = Wire.read();
+          g_state.onTimeH = h;
+          g_state.onTimeM = m;
 
           Serial.print("onTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
           break;
@@ -214,7 +229,9 @@ void i2cReceiveEvent(int howMany) {
         {
           byte h = Wire.read();
           byte m = Wire.read();
-
+          g_state.offTimeH = h;
+          g_state.offTimeM = m;
+          
           Serial.print("offTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
           break;
         }
@@ -317,19 +334,22 @@ bool checkVoltageGood()
   return (TCCR1B != 0);
 }
 
-byte pattern = 0;
+byte patternIndex = 0;
 unsigned long patternMillis = 0;
 const byte NUM_PATTERN = 7;
 
 void loop() {
-  if (!checkVoltageGood() || !g_state.enable) {
-    pattern = 255; // all zeros
+  if (!checkVoltageGood() || !g_state.enable || g_state.pattern == 0) {
+    patternIndex = 255; // all zeros
   }
-  else if (g_state.enable && g_state.pattern < 255) {
-    pattern = g_state.pattern;
+  else if (g_state.enable) {
+    // move to next enabled pattern
+    while (!(g_state.pattern & (1 << patternIndex))) {
+      patternIndex = (patternIndex + 1) % NUM_PATTERN;
+    }
   }
 
-  switch (pattern) {
+  switch (patternIndex) {
     case 0: circle_outward(1); break;
     case 1: circle_outward(0); break;
     case 2: test1(0); break;
@@ -342,7 +362,7 @@ void loop() {
 
   if (millis() - patternMillis > 8000l) {
     patternMillis = millis();
-    pattern = (pattern + 1) % NUM_PATTERN;
+    patternIndex = (patternIndex + 1) % NUM_PATTERN;
   }
 }
 
