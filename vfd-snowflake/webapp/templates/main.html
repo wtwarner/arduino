@@ -1,14 +1,77 @@
 <!DOCTYPE html>
 <head>
-   <title>RPi Web Server</title>
+   <title>VFD Snowflake Web Server</title>
    <!-- Latest compiled and minified CSS -->
    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+   <!-- Latest compiled and minified JavaScript -->
+   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
 </head>
 
 <body>
    <h1>VFD Snowflake</h1>
-   <h2>Power
-      <div class="row"><div class="col-md-2"><a href="/power/off" class="btn btn-block btn-lg btn-default" role="button">Turn off</a></div></div>
-      <div class="row"><div class="col-md-2"><a href="/power/on" class="btn btn-block btn-lg btn-default" role="button">Turn on</a></div></div>
-</h2>
+   <h2>Power (currently {{ power }})</h2>
+      <div class="row"><div class="col-md-2"><a href="/power/off"
+{% if power == 1 %}
+ class="btn btn-block btn-lg btn-primary" 
+{% else %}
+ class="btn btn-block btn-lg btn-secondary" disabled 
+{% endif %}
+	role="button">Turn off</a></div></div>
+   <div class="row"><div class="col-md-2"><a href="/power/on"
+{% if power == 0 %}
+class="btn btn-block btn-lg btn-primary"
+{% else %}
+class="btn btn-block btn-lg btn-secondary" disabled
+{% endif %}
+	 role="button">Turn on</a></div></div>
+
+   <h2>Pattern (currently {{ pattern }})
+   </h2>
+
+<div class="row"><div class="col-md-2"><a href="/pattern/all" 
+{%if pattern == 255%}
+class="btn btn-block btn-lg btn-secondary" disabled
+{% else %}
+class="btn btn-block btn-lg btn-primary"
+{% endif %}
+ role="button">Rotate All Patterns</a></div></div>
+<div class="row"><div class="col-md-2"><a href="/pattern/0" 
+{%if pattern == 0%}
+class="btn btn-block btn-lg btn-secondary" disabled
+{% else %}
+class="btn btn-block btn-lg btn-primary"
+{% endif %}  
+ role="button">Pattern 0</a></div></div>
+
+<h2>Time</h2>
+<form method="post">
+<label>On Time</label>
+<div class="row mb-3">
+  <div class="col-sm-3">
+      <input type="text" class="form-control" name="onTimeH" placeholder="HH" aria-label="H">
+  </div>
+  <div class="col-sm-1">
+      <span>:</span>
+  </div>
+  <div class="col-sm-3">
+      <input type="text" class="form-control" name="onTimeM" placeholder="MM" aria-label="M">
+  </div>
+  </div>
+</div>
+<label>Off Time</label>
+<div class="row mb-3">
+  <div class="col-sm-3">
+      <input type="text" class="form-control" name="offTimeH" placeholder="HH" aria-label="H">     
+  </div>
+  <div class="col-sm-1">
+      <span>:</span>                           
+  </div>
+  <div class="col-sm-3">
+      <input type="text" class="form-control" name="offTimeM" placeholder="MM" aria-label="M">     
+  </div>
+  </div>
+</div>
+
+<button type="submit" class="btm btn-primary">Submit</button>
+</form>
 </body>
