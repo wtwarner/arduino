@@ -12,13 +12,15 @@
 // This controller sends a square wave on 2 pins (complementary pair) to sub-cons,
 // which use H-Bridges to make A/C for the filaments.
 //
-
+#include <Wire.h>
+#include <TimeLib.h>
 #include "TimerHelpers.h"
 #define USE_PROGMEM
 #define FIL_AC
 
 const int PAD_SD1=3, PAD_SCLK=2, PAD_RCLK=4, PAD_SD2=5; // shift register
 const int PAD_FIL0=9, PAD_FIL1=10;  // filament "A/C" waveform
+const int PAD_MEASURE5V = A7;
 
 void clear_vfd(byte polarity=0);
 void pack_vfd();
@@ -40,6 +42,11 @@ struct vfd_cfg_t {
 };
 
 byte vfd_state[NUM_RAD][24][NUM_SEG];
+
+struct {
+  bool enable;
+  byte pattern; // 255 = switch
+} g_state = {true, 255};
 
 const 
 #ifdef USE_PROGMEM
@@ -117,6 +124,10 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, 1);
 
+  Wire.begin(8);                // join I2C bus with address #8
+  Wire.onReceive(i2cReceiveEvent); // write
+  Wire.onRequest(i2cRequestEvent); // read
+
   analogReference(INTERNAL);
   fil_disable();
 
@@ -132,6 +143,86 @@ ISR (TIMER1_OVF_vect)
   ICR1 = period;
   OCR1A = period/2;
   OCR1B = period/2;
+}
+
+byte i2c_cmd = 0;
+bool i2c_cmd_valid = false;
+
+enum { I2C_CMD_FIRST = 0x80, 
+  I2C_CMD_POWER = 0x80,
+  I2C_CMD_PATTERN, 
+  I2C_CMD_CURTIME,   // Unix time_t LSB first
+  I2C_CMD_ONTIME, // H then M
+  I2C_CMD_OFFTIME, // H then M
+  I2C_CMD_LAST};
+
+void i2cRequestEvent()
+{
+  Serial.print("i2c read "); Serial.println(i2c_cmd, HEX);
+   byte resp[1] = {0};
+   switch (i2c_cmd) {
+    case I2C_CMD_POWER: resp[0] = g_state.enable; break;
+    case I2C_CMD_PATTERN: resp[0] = g_state.pattern; break;
+   }
+   Wire.write(resp, 1);
+   i2c_cmd_valid = 0;
+}
+
+void i2cReceiveEvent(int howMany) {
+  while (Wire.available()) { 
+    if (!i2c_cmd_valid) {
+      byte c = Wire.read(); 
+      Serial.print("cmd: "); Serial.println(c,HEX);
+      if (c >= I2C_CMD_FIRST && c <= I2C_CMD_LAST) {
+        i2c_cmd = c;
+        i2c_cmd_valid = true;
+      }
+    }
+    else if (i2c_cmd_valid) {
+      byte c;
+      switch (i2c_cmd) {
+        case I2C_CMD_POWER:
+          c = Wire.read();
+          g_state.enable = (c == 1);
+          Serial.print("power: "); Serial.println(c,HEX);
+          break;
+        case I2C_CMD_PATTERN:
+          c = Wire.read();
+          g_state.pattern = c;
+          Serial.print("pattern: "); Serial.println(c,HEX);
+          break;
+        case I2C_CMD_CURTIME:
+        {
+          time_t t = 0;
+          for (byte i = 0; i < 4; i ++) {
+            t = (t >> 8l) | ((time_t)Wire.read() << 24l);
+          }
+          Serial.print("curTime "); Serial.println(t);
+          setTime(t);
+          Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+          break;
+        }
+        case I2C_CMD_ONTIME:
+        {
+          byte h = Wire.read();
+          byte m = Wire.read();
+
+          Serial.print("onTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
+          break;
+        }
+        case I2C_CMD_OFFTIME:
+        {
+          byte h = Wire.read();
+          byte m = Wire.read();
+
+          Serial.print("offTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
+          break;
+        }
+      }
+          
+      i2c_cmd_valid = false;
+    }
+  }
 }
 
 void fil_enable()
@@ -165,7 +256,7 @@ void fil_disable()
 }
 
 int getVoltage(void) {
-  long a = analogRead(A7);
+  long a = analogRead(PAD_MEASURE5V);
   // pin has Vcc * 1/(1+4.7).  ADC 0..1023 is 0..1.1V.
   long mv = a * 1100l/1023l;
   long scaled_mv = mv * 5700l/1000l;
@@ -212,16 +303,18 @@ void send_vfd()
   digitalWrite(PAD_RCLK, 0);
 }
 
-void checkVoltage()
+bool checkVoltageGood()
 {
   // turn off filament if voltage sags
   const int v = getVoltage();
-  if (TCCR1B != 0 && v < 4500) {
+  const bool off = (TCCR1B == 0);
+  if (!off && (!g_state.enable || v < 4500)) {
     fil_disable();
   }
-  else if (TCCR1B == 0 && v > 4700) {
+  else if (off && g_state.enable && v > 4700) {
     fil_enable();
   }
+  return (TCCR1B != 0);
 }
 
 byte pattern = 0;
@@ -229,11 +322,13 @@ unsigned long patternMillis = 0;
 const byte NUM_PATTERN = 7;
 
 void loop() {
-  checkVoltage();
+  if (!checkVoltageGood() || !g_state.enable) {
+    pattern = 255; // all zeros
+  }
+  else if (g_state.enable && g_state.pattern < 255) {
+    pattern = g_state.pattern;
+  }
 
-#if 0
-  spiral(0);
-#else
   switch (pattern) {
     case 0: circle_outward(1); break;
     case 1: circle_outward(0); break;
@@ -242,9 +337,9 @@ void loop() {
     case 4: rotate(1); break;
     case 5: spiral(0); break;
     case 6: spiral(1); break;
-    default: all1(); break;
+    default: all_constant(0); break;
   }
-#endif
+
   if (millis() - patternMillis > 8000l) {
     patternMillis = millis();
     pattern = (pattern + 1) % NUM_PATTERN;
@@ -261,17 +356,15 @@ void test1(byte polarity) {
     }
     pack_vfd();
     send_vfd();
-    delay(200);
-    
+    delay(200); 
   }
 }
 
-void all1() {
-  clear_vfd(1);
+void all_constant(byte v) {
+  clear_vfd(v);
   pack_vfd();
   send_vfd();
   delay(100);
-
 }
 
 void circle_outward(byte polarity) {
