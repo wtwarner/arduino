@@ -14,6 +14,7 @@
 //
 #include <Wire.h>
 #include <TimeLib.h>
+#include <EEPROM.h>
 #include "TimerHelpers.h"
 #define USE_PROGMEM
 #define FIL_AC
@@ -116,6 +117,11 @@ vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
 
 uint8_t packed_bits[NUM_SUBCON * BITS_PER_SUBCON/8];
 
+byte patternIndex = 0;
+unsigned long patternMillis = 0;
+const byte NUM_PATTERN = 7;
+bool timerOn = true;
+
 void setup() {
   Serial.begin(9600);
   pinMode(PAD_SD1, OUTPUT);
@@ -127,6 +133,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, 1);
 
+  EEPROM.get(0, g_state);
   Wire.begin(8);                // join I2C bus with address #8
   Wire.onReceive(i2cReceiveEvent); // write
   Wire.onRequest(i2cRequestEvent); // read
@@ -197,11 +204,13 @@ void i2cReceiveEvent(int howMany) {
         case I2C_CMD_PATTERN:
           c = Wire.read();
           g_state.pattern = c | (Wire.read() << 8);
+          g_state.pattern = max(1, g_state.pattern); // disallow value 0
           Serial.print("pattern: "); Serial.println(g_state.pattern,HEX);
           break;
         case I2C_CMD_ENTIMER:
           c = Wire.read();
           g_state.timerEnable = c;
+          if (!g_state.timerEnable) { timerOn = true; }
           Serial.print("timerEnable: "); Serial.println(c,HEX);
           break;
         case I2C_CMD_CURTIME:
@@ -238,6 +247,8 @@ void i2cReceiveEvent(int howMany) {
       }
           
       i2c_cmd_valid = false;
+
+      EEPROM.put(0, g_state);
     }
   }
 }
@@ -325,21 +336,37 @@ bool checkVoltageGood()
   // turn off filament if voltage sags
   const int v = getVoltage();
   const bool off = (TCCR1B == 0);
-  if (!off && (!g_state.enable || v < 4500)) {
+  if (!off && (!g_state.enable || v < 4500 || !timerOn)) {
     fil_disable();
   }
-  else if (off && g_state.enable && v > 4700) {
+  else if (off && g_state.enable && v > 4700 && timerOn) {
     fil_enable();
   }
   return (TCCR1B != 0);
 }
 
-byte patternIndex = 0;
-unsigned long patternMillis = 0;
-const byte NUM_PATTERN = 7;
-
 void loop() {
-  if (!checkVoltageGood() || !g_state.enable || g_state.pattern == 0) {
+  static int prev_minute = 0;
+  const int now_m = minute();
+  if (now_m != prev_minute) {
+    bool time_valid = now() > 1765734060l;
+    const int now_minute = hour() * 60 + now_m;
+    const int off_minute = g_state.offTimeH * 60 + g_state.offTimeM;
+    const int on_minute = g_state.onTimeH * 60 + g_state.onTimeM;
+    bool turnOn = time_valid && (now_minute == on_minute);
+    bool turnOff = time_valid && (now_minute == off_minute);
+
+    if (g_state.timerEnable && turnOff) {
+      timerOn = false;
+      Serial.println("timer turn off");
+    }
+    else if (g_state.timerEnable && turnOn) {
+      timerOn = true;
+      Serial.println("timer turn on");
+    }
+    prev_minute = now_m;
+  }
+  if (!checkVoltageGood() || !g_state.enable || g_state.pattern == 0 || (!timerOn && g_state.timerEnable)) {
     patternIndex = 255; // all zeros
   }
   else if (g_state.enable) {
