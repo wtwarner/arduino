@@ -16,6 +16,8 @@
 #include <TimeLib.h>
 #include <EEPROM.h>
 #include "TimerHelpers.h"
+#include <serial-readline.h>
+
 #define USE_PROGMEM
 #define FIL_AC
 
@@ -121,6 +123,35 @@ byte patternIndex = 0;
 unsigned long patternMillis = 0;
 const byte NUM_PATTERN = 7;
 bool timerOn = true;
+
+//
+// Serial port command line
+//
+void serial_received(char *s);
+void cmd_parse(String &cmd);
+
+SerialLineReader<typeof(Serial)>  serial_reader(Serial, serial_received);
+
+void serial_received(char *s)
+{
+  String str(s);
+  cmd_parse(str);
+}
+
+void cmd_parse(String &cmd) {
+  int v = 0, vx = 0;
+  int i;
+  if ((i = cmd.indexOf(':')) >= 0) {
+    String value_s(cmd.substring(i + 1));
+    v = atoi(value_s.c_str());
+    vx = (int)strtol(value_s.c_str(), 0, 16);
+  }
+
+  if (cmd.startsWith("t?")) {
+     Serial.println(now());
+     Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+  }
+}
 
 void setup() {
   Serial.begin(9600);
@@ -248,7 +279,6 @@ void i2cReceiveEvent(int howMany) {
           
       i2c_cmd_valid = false;
 
-      EEPROM.put(0, g_state);
     }
   }
 }
@@ -316,7 +346,6 @@ void pack_vfd()
   }
 }
 
-
 void send_vfd()
 {
   const int bits_per_sd = NUM_SUBCON*BITS_PER_SUBCON/2;
@@ -346,6 +375,8 @@ bool checkVoltageGood()
 }
 
 void loop() {
+  serial_reader.poll();
+
   static int prev_minute = 0;
   const int now_m = minute();
   if (now_m != prev_minute) {
@@ -355,6 +386,8 @@ void loop() {
     const int on_minute = g_state.onTimeH * 60 + g_state.onTimeM;
     bool turnOn = time_valid && (now_minute == on_minute);
     bool turnOff = time_valid && (now_minute == off_minute);
+    Serial.print("m: "); Serial.print(hour()); Serial.print(":"); Serial.println(now_m);
+    Serial.print("now_min "); Serial.println(now_minute);
 
     if (g_state.timerEnable && turnOff) {
       timerOn = false;
@@ -365,7 +398,11 @@ void loop() {
       Serial.println("timer turn on");
     }
     prev_minute = now_m;
+
+    // write global config if changed
+    EEPROM.put(0, g_state);
   }
+
   if (!checkVoltageGood() || !g_state.enable || g_state.pattern == 0 || (!timerOn && g_state.timerEnable)) {
     patternIndex = 255; // all zeros
   }
