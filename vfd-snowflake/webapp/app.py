@@ -5,7 +5,7 @@ import time, datetime
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
 
-address = 0x08
+address = 0x08  # I2C slave address of Arduino
 bus = SMBus(1)
 
 I2C_CMD_POWER = 0x80
@@ -71,7 +71,6 @@ def main():
 
      timerEnable = getFormField('timerEnable', 0)
      bus.write_i2c_block_data(address, I2C_CMD_ENTIMER, [timerEnable])
-
      patternBitMask = 0
      patternShift = 0
      for pattern in patterns:
@@ -80,16 +79,6 @@ def main():
         patternShift = patternShift + 1
      bus.write_i2c_block_data(address, I2C_CMD_PATTERN, [patternBitMask & 0xff, (patternBitMask >> 8) & 0xff])
    return populate_template()
-
-@app.route("/pattern/<action>")
-def pattern_action(action):
-   print("pattern")
-   if action == "all":
-      bus.write_i2c_block_data(address, 0x81, [255])
-   else:
-      bus.write_i2c_block_data(address, 0x81, [int(action)])
-
-   return redirect(url_for('main'))
 
 if __name__ == '__main__':
     app.logger.setLevel("WARNING")
