@@ -14,6 +14,7 @@
 //
 #include <Wire.h>
 #include <TimeLib.h>
+#include <Array.h>
 #include <EEPROM.h>
 #include "TimerHelpers.h"
 #include <serial-readline.h>
@@ -139,17 +140,50 @@ void serial_received(char *s)
 }
 
 void cmd_parse(String &cmd) {
-  int v = 0, vx = 0;
+  unsigned long v = 0, v2 = 0;
   int i;
   if ((i = cmd.indexOf(':')) >= 0) {
     String value_s(cmd.substring(i + 1));
-    v = atoi(value_s.c_str());
-    vx = (int)strtol(value_s.c_str(), 0, 16);
+    v = strtoul(value_s.c_str(), 0, 0);
+
+    if ((i = cmd.indexOf(':', i)) >= 0) {
+      String value_s(cmd.substring(i + 1));
+      v2 = strtoul(value_s.c_str(), 0, 0);
+    }
   }
 
   if (cmd.startsWith("t?")) {
      Serial.println(now());
      Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+  }
+  else if (cmd.startsWith("pwr:")) {
+    g_state.enable = (v == 1);
+    Serial.print("power: "); Serial.println(g_state.enable);
+  }
+  else if (cmd.startsWith("pat:")) {
+    g_state.pattern = max(1, v); // disallow value 0
+    Serial.print("pattern: "); Serial.println(g_state.pattern,HEX);
+  }
+  else if (cmd.startsWith("te:")) {
+    g_state.timerEnable = (v == 1);
+    if (!g_state.timerEnable) { timerOn = true; }
+    Serial.print("timerEnable: "); Serial.println(g_state.timerEnable);
+  }
+  else if (cmd.startsWith("st:")) {
+    setTime(v);
+    Serial.print("curTime "); Serial.print(v); Serial.print("; "); Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+  }
+  else if (cmd.startsWith("ont:")) {
+    g_state.onTimeH = v;
+    g_state.onTimeM = v2;
+
+    Serial.print("onTime "); Serial.print(v); Serial.print(':'); Serial.println(v2);
+  }
+  else if (cmd.startsWith("offt:")) {
+    g_state.offTimeH = v;
+    g_state.offTimeM = v2;
+
+    Serial.print("offTime "); Serial.print(v); Serial.print(':'); Serial.println(v2);
   }
 }
 
@@ -165,7 +199,11 @@ void setup() {
   digitalWrite(LED_BUILTIN, 1);
 
   EEPROM.get(0, g_state);
+  Wire.setWireTimeout(25000, true);
   Wire.begin(8);                // join I2C bus with address #8
+    // deactivate internal pullups for twi.
+  digitalWrite(SDA, 0);
+  digitalWrite(SCL, 0);
   Wire.onReceive(i2cReceiveEvent); // write
   Wire.onRequest(i2cRequestEvent); // read
 
@@ -187,7 +225,9 @@ ISR (TIMER1_OVF_vect)
 }
 
 byte i2c_cmd = 0;
-bool i2c_cmd_valid = false;
+#define I2C_CMD_CL_SIZE 16 /* includes null terminator */
+Array<char, I2C_CMD_CL_SIZE> i2c_cl_s;
+Array<Array<char, I2C_CMD_CL_SIZE>, 4> i2c_cl_q;
 
 enum { I2C_CMD_FIRST = 0x80, 
   I2C_CMD_POWER = 0x80,
@@ -196,11 +236,12 @@ enum { I2C_CMD_FIRST = 0x80,
   I2C_CMD_ONTIME, // H then M
   I2C_CMD_OFFTIME, // H then M
   I2C_CMD_ENTIMER, // enable
+  I2C_CMD_CL,      // command line, up to I2C_CMD_CL_SIZE bytes w/ null terminator
   I2C_CMD_LAST};
 
 void i2cRequestEvent()
 {
-  Serial.print("i2c read "); Serial.println(i2c_cmd, HEX);
+  //Serial.print("i2c read "); Serial.println(i2c_cmd, HEX);
    byte resp[2] = {0};
    byte respCount = 1;
    switch (i2c_cmd) {
@@ -211,75 +252,86 @@ void i2cRequestEvent()
     case I2C_CMD_OFFTIME: resp[0] = g_state.offTimeH; resp[1] = g_state.offTimeM; respCount = 2; break;
    }
    Wire.write(resp, respCount);
-   i2c_cmd_valid = 0;
 }
 
 void i2cReceiveEvent(int howMany) {
-  while (Wire.available()) { 
-    if (!i2c_cmd_valid) {
-      byte c = Wire.read(); 
-      Serial.print("cmd: "); Serial.println(c,HEX);
-      if (c >= I2C_CMD_FIRST && c <= I2C_CMD_LAST) {
-        i2c_cmd = c;
-        i2c_cmd_valid = true;
+  if (howMany < 1) return;
+  i2c_cmd = Wire.read(); 
+  //Serial.print("cmd: "); Serial.println(c,HEX);
+  byte c;
+  switch (i2c_cmd) {
+  case I2C_CMD_POWER:
+    if (howMany < 2) return;
+    c = Wire.read();
+    g_state.enable = (c == 1);
+    //Serial.print("power: "); Serial.println(c,HEX);
+    break;
+    
+  case I2C_CMD_PATTERN:
+    if (howMany < 2) return;
+    c = Wire.read();
+    g_state.pattern = c | (Wire.read() << 8);
+    g_state.pattern = max(1, g_state.pattern); // disallow value 0
+    //Serial.print("pattern: "); Serial.println(g_state.pattern,HEX);
+    break;
+    
+  case I2C_CMD_ENTIMER:
+    if (howMany < 2) return;
+    c = Wire.read();
+    g_state.timerEnable = c;
+    if (!g_state.timerEnable) { timerOn = true; }
+    //Serial.print("timerEnable: "); Serial.println(c,HEX);
+    break;
+    
+  case I2C_CMD_CURTIME:
+    {
+      if (howMany < 5) { return; }
+      time_t t = 0;
+      for (byte i = 0; i < 4; i ++) {
+	t = (t >> 8l) | ((time_t)Wire.read() << 24l);
+      }
+      //Serial.print("curTime "); Serial.println(t);
+      setTime(t);
+      //Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+      break;
+    }
+  case I2C_CMD_ONTIME:
+    {
+      if (howMany < 3) return;
+      byte h = Wire.read();
+      byte m = Wire.read();
+      g_state.onTimeH = h;
+      g_state.onTimeM = m;
+
+      //Serial.print("onTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
+      break;
+    }
+  case I2C_CMD_OFFTIME:
+    {
+      if (howMany < 3) return;
+      byte h = Wire.read();
+      byte m = Wire.read();
+      g_state.offTimeH = h;
+      g_state.offTimeM = m;
+          
+      //Serial.print("offTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
+      break;
+    }
+
+  case I2C_CMD_CL:
+    while (Wire.available() && !i2c_cl_s.full()) {
+      c = Wire.read();
+      i2c_cl_s.push_back(c);
+      if (c == 0) {
+	i2c_cl_q.push_back(i2c_cl_s);
+	i2c_cl_s.clear();
       }
     }
-    else if (i2c_cmd_valid) {
-      byte c;
-      switch (i2c_cmd) {
-        case I2C_CMD_POWER:
-          c = Wire.read();
-          g_state.enable = (c == 1);
-          Serial.print("power: "); Serial.println(c,HEX);
-          break;
-        case I2C_CMD_PATTERN:
-          c = Wire.read();
-          g_state.pattern = c | (Wire.read() << 8);
-          g_state.pattern = max(1, g_state.pattern); // disallow value 0
-          Serial.print("pattern: "); Serial.println(g_state.pattern,HEX);
-          break;
-        case I2C_CMD_ENTIMER:
-          c = Wire.read();
-          g_state.timerEnable = c;
-          if (!g_state.timerEnable) { timerOn = true; }
-          Serial.print("timerEnable: "); Serial.println(c,HEX);
-          break;
-        case I2C_CMD_CURTIME:
-        {
-          time_t t = 0;
-          for (byte i = 0; i < 4; i ++) {
-            t = (t >> 8l) | ((time_t)Wire.read() << 24l);
-          }
-          Serial.print("curTime "); Serial.println(t);
-          setTime(t);
-          Serial.print(hour()); Serial.print(":"); Serial.println(minute());
-          break;
-        }
-        case I2C_CMD_ONTIME:
-        {
-          byte h = Wire.read();
-          byte m = Wire.read();
-          g_state.onTimeH = h;
-          g_state.onTimeM = m;
-
-          Serial.print("onTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
-          break;
-        }
-        case I2C_CMD_OFFTIME:
-        {
-          byte h = Wire.read();
-          byte m = Wire.read();
-          g_state.offTimeH = h;
-          g_state.offTimeM = m;
-          
-          Serial.print("offTime "); Serial.print(h); Serial.print(':'); Serial.println(m);
-          break;
-        }
-      }
-          
-      i2c_cmd_valid = false;
-
-    }
+    break;
+  }
+  // flush
+  while (Wire.available()) {
+    (void)Wire.read();
   }
 }
 
@@ -376,6 +428,11 @@ bool checkVoltageGood()
 
 void loop() {
   serial_reader.poll();
+  if (!i2c_cl_q.empty()) {
+    String s(i2c_cl_q.front().data());
+    cmd_parse(s);
+    i2c_cl_q.remove(0); // pop front
+  }
 
   static int prev_minute = 0;
   const int now_m = minute();
