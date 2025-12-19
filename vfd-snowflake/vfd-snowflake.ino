@@ -128,26 +128,18 @@ bool timerOn = true;
 //
 // Serial port command line
 //
-void serial_received(char *s);
 void cmd_parse(String &cmd);
 
-SerialLineReader<typeof(Serial)>  serial_reader(Serial, serial_received);
-
-void serial_received(char *s)
-{
-  String str(s);
-  cmd_parse(str);
-}
+SerialLineReader<typeof(Serial)>  serial_reader(Serial);
 
 void cmd_parse(String &cmd) {
   unsigned long v = 0, v2 = 0;
-  int i;
-  if ((i = cmd.indexOf(':')) >= 0) {
+  if (int i = cmd.indexOf(':'); i >= 0) {
     String value_s(cmd.substring(i + 1));
     v = strtoul(value_s.c_str(), 0, 0);
 
-    if ((i = cmd.indexOf(':', i)) >= 0) {
-      String value_s(cmd.substring(i + 1));
+    if (int i2 = cmd.indexOf(':', i + 1); i >= 0) {
+      String value_s(cmd.substring(i2 + 1));
       v2 = strtoul(value_s.c_str(), 0, 0);
     }
   }
@@ -426,12 +418,38 @@ bool checkVoltageGood()
   return (TCCR1B != 0);
 }
 
-void loop() {
+bool check_cmd()
+{
   serial_reader.poll();
-  if (!i2c_cl_q.empty()) {
-    String s(i2c_cl_q.front().data());
-    cmd_parse(s);
-    i2c_cl_q.remove(0); // pop front
+  return serial_reader.available() || !i2c_cl_q.empty();
+}
+
+// for calling within pattern functions; delay while checking
+// for commands
+#define DELAY(ms)                       \
+do {                                    \
+  long start = now();                   \
+  while (now() < (start +  ms)) {       \
+    if (check_cmd()) {                  \
+      return;                           \
+    }                                   \
+    delay(2);                           \
+  }                                     \
+} while(0)
+
+void loop() {
+  if (check_cmd()) {
+    if (serial_reader.available()) {
+      char s[I2C_CMD_CL_SIZE]; // including terminating \0
+      serial_reader.read(s);
+      String str(s);
+      cmd_parse(str);
+    }
+    if (!i2c_cl_q.empty()) {
+      String s(i2c_cl_q.front().data());
+      cmd_parse(s);
+      i2c_cl_q.remove(0); // pop front
+    }
   }
 
   static int prev_minute = 0;
@@ -497,7 +515,7 @@ void test1(byte polarity) {
     }
     pack_vfd();
     send_vfd();
-    delay(200); 
+    DELAY(200); 
   }
 }
 
@@ -505,11 +523,11 @@ void all_constant(byte v) {
   clear_vfd(v);
   pack_vfd();
   send_vfd();
-  delay(100);
+  DELAY(100);
 }
 
 void circle_outward(byte polarity) {
-  for (byte r = 0; r < 3; r++) {
+  for (byte r = 0; r < NUM_RAD; r++) {
     for (byte s = 0; s < NUM_SEG; s++) {
       clear_vfd(!polarity);
       for (byte a = 0; a < vfd_per_radius[r]; a++) {
@@ -517,7 +535,7 @@ void circle_outward(byte polarity) {
       }
       pack_vfd();
       send_vfd();
-      delay(120);
+      DELAY(120);
     }
   }
 }
@@ -525,7 +543,7 @@ void circle_outward(byte polarity) {
 void rotate(byte dir) {
   for (byte a = dir ? 25 : 0; dir ? (a > 0) : (a < 25); a += dir ? -1 : 1) {
     clear_vfd();
-    for (byte r = 0; r < 3; r++) {
+    for (byte r = 0; r < NUM_RAD; r++) {
       byte a_offset = (r == 0) ? 3 : 0;
       for (byte s = 0; s < NUM_SEG; s++) {
         vfd_state[r][(a + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
@@ -536,12 +554,12 @@ void rotate(byte dir) {
     }
     pack_vfd();
     send_vfd();
-    delay(50);
+    DELAY(50);
   }
 }
 
 void spiral(byte polarity) {
-  int stepDelay = 40;
+  const int stepDelay = 40;
   clear_vfd(!polarity);
 
   for (byte r = 0; r < NUM_RAD; r++) {
@@ -550,7 +568,7 @@ void spiral(byte polarity) {
         vfd_state[r][a][s] = polarity;
         pack_vfd();
         send_vfd();
-        delay(stepDelay);
+        DELAY(stepDelay);
       }
     }
   }
