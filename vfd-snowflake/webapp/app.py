@@ -2,8 +2,10 @@
 from flask import Flask, render_template, request, redirect, url_for
 from smbus2 import SMBus
 import time, datetime
+import atexit
+from apscheduler.schedulers.background import BackgroundScheduler
 
-address = 0x08
+address = 0x08  # I2C slave address of Arduino
 bus = SMBus(1)
 
 I2C_CMD_POWER = 0x80
@@ -45,14 +47,19 @@ def getFormField(field, default):
    else:
       return default
 
+def send_curtime():
+    timezone_aware_dt = datetime.datetime.now(datetime.timezone.utc)
+    utime = int(timezone_aware_dt.timestamp() - 8*60*60) # correct timezone
+    req = [utime & 0xff, (utime>>8) & 0xff, (utime>>16) & 0xff, (utime>>24) & 0xff]
+    bus.write_i2c_block_data(address, I2C_CMD_CURTIME, req)
+    app.logger.info("sent curtime")
+
 @app.route('/', methods=['GET', 'POST'])
 def main():
    if request.method == 'POST':
-     timezone_aware_dt = datetime.datetime.now(datetime.timezone.utc)
-     utime = int(timezone_aware_dt.timestamp() - 8*60*60)
-     req = [utime & 0xff, (utime>>8) & 0xff, (utime>>16) & 0xff, (utime>>24) & 0xff]
-     bus.write_i2c_block_data(address, I2C_CMD_CURTIME, req)
-
+     app.logger.info("POST")
+     send_curtime()
+ 
      req = [int(request.form['onTimeH']), int(request.form['onTimeM'])]
      bus.write_i2c_block_data(address, I2C_CMD_ONTIME, req)
 
@@ -64,7 +71,6 @@ def main():
 
      timerEnable = getFormField('timerEnable', 0)
      bus.write_i2c_block_data(address, I2C_CMD_ENTIMER, [timerEnable])
-
      patternBitMask = 0
      patternShift = 0
      for pattern in patterns:
@@ -74,15 +80,10 @@ def main():
      bus.write_i2c_block_data(address, I2C_CMD_PATTERN, [patternBitMask & 0xff, (patternBitMask >> 8) & 0xff])
    return populate_template()
 
-@app.route("/pattern/<action>")
-def pattern_action(action):
-   print("pattern")
-   if action == "all":
-      bus.write_i2c_block_data(address, 0x81, [255])
-   else:
-      bus.write_i2c_block_data(address, 0x81, [int(action)])
-
-   return redirect(url_for('main'))
-
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.logger.setLevel("WARNING")
+    sched = BackgroundScheduler()
+    sched.add_job(func=send_curtime, trigger='interval', seconds=5)
+    sched.start()
+    atexit.register(lambda: sched.shutdown())
+    app.run(debug=True, host='0.0.0.0', use_reloader=False)
