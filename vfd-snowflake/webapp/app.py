@@ -14,6 +14,7 @@ I2C_CMD_CURTIME = 0x82   # Unix time_t LSB first
 I2C_CMD_ONTIME = 0x83    # H then M
 I2C_CMD_OFFTIME = 0x84   # H then M
 I2C_CMD_ENTIMER = 0x85
+I2C_CMD_CL = 0x86
 
 app = Flask(__name__)
 
@@ -60,28 +61,46 @@ def main():
      app.logger.info("POST")
      send_curtime()
  
-     req = [int(request.form['onTimeH']), int(request.form['onTimeM'])]
-     bus.write_i2c_block_data(address, I2C_CMD_ONTIME, req)
+     def to_rl(s):  # string to request number list, with 0 terminator
+        app.logger.info(f"send cl {s}")
+        return [ord(x) for x in s] + [0]
 
-     req = [int(request.form['offTimeH']), int(request.form['offTimeM'])]
-     bus.write_i2c_block_data(address, I2C_CMD_OFFTIME, req)
+     ontH = int(request.form['onTimeH'])
+     ontM = int(request.form['onTimeM'])
+     req = [ontH, ontM]
+     #bus.write_i2c_block_data(address, I2C_CMD_ONTIME, req)
+     bus.write_i2c_block_data(address, I2C_CMD_CL, to_rl(f"ont:{ontH}:{ontM}"))
+
+     offtH = int(request.form['offTimeH'])
+     offtM = int(request.form['offTimeM'])
+     req = [offtH, offtM]
+     #bus.write_i2c_block_data(address, I2C_CMD_OFFTIME, req)
+     bus.write_i2c_block_data(address, I2C_CMD_CL, to_rl(f"offt:{offtH}:{offtM}"))
 
      power = getFormField('power', 0)
-     bus.write_i2c_block_data(address, I2C_CMD_POWER, [power])
+     #bus.write_i2c_block_data(address, I2C_CMD_POWER, [power])
+     bus.write_i2c_block_data(address, I2C_CMD_CL, to_rl(f"pwr:{power}"))
 
      timerEnable = getFormField('timerEnable', 0)
-     bus.write_i2c_block_data(address, I2C_CMD_ENTIMER, [timerEnable])
+     #bus.write_i2c_block_data(address, I2C_CMD_ENTIMER, [timerEnable])
+     bus.write_i2c_block_data(address, I2C_CMD_CL, to_rl(f"te:{timerEnable}"))
+
      patternBitMask = 0
      patternShift = 0
      for pattern in patterns:
         en = getFormField(pattern, 0)
         patternBitMask = patternBitMask | (en << patternShift)
         patternShift = patternShift + 1
-     bus.write_i2c_block_data(address, I2C_CMD_PATTERN, [patternBitMask & 0xff, (patternBitMask >> 8) & 0xff])
+     #bus.write_i2c_block_data(address, I2C_CMD_PATTERN, [patternBitMask & 0xff, (patternBitMask >> 8) & 0xff])
+     bus.write_i2c_block_data(address, I2C_CMD_CL, to_rl(f"pat:{patternBitMask:#x}"))
+
+     time.sleep(0.5)
+
    return populate_template()
 
 if __name__ == '__main__':
     app.logger.setLevel("WARNING")
+    #app.logger.setLevel("INFO")
     sched = BackgroundScheduler()
     sched.add_job(func=send_curtime, trigger='interval', seconds=5)
     sched.start()
