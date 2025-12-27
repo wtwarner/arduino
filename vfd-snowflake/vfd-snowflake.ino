@@ -280,7 +280,7 @@ void i2cReceiveEvent(int howMany) {
       if (howMany < 5) { return; }
       time_t t = 0;
       for (byte i = 0; i < 4; i ++) {
-	t = (t >> 8l) | ((time_t)Wire.read() << 24l);
+	       t = (t >> 8l) | ((time_t)Wire.read() << 24l);
       }
       //Serial.print("curTime "); Serial.println(t);
       setTime(t);
@@ -428,8 +428,8 @@ bool check_cmd()
 // for commands
 #define DELAY(ms)                       \
 do {                                    \
-  long start = now();                   \
-  while (now() < (start +  ms)) {       \
+  unsigned long start = millis();       \
+  while ((millis() - start) < (unsigned long)(ms)) {    \
     if (check_cmd()) {                  \
       return;                           \
     }                                   \
@@ -499,8 +499,9 @@ void loop() {
     default: all_constant(0); break;
   }
 
-  if (millis() - patternMillis > 8000l) {
-    patternMillis = millis();
+  unsigned long currMillis = millis();
+  if (currMillis - patternMillis > 8000ul) {
+    patternMillis = currMillis;
     patternIndex = (patternIndex + 1) % NUM_PATTERN;
   }
 }
