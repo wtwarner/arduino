@@ -14,21 +14,20 @@
 //
 #include <TimeLib.h>
 #include <Array.h>
-#include <EEPROM.h>
+#include <Preferences.h>
 #include <serial-readline.h>
 
 #include "driver/mcpwm.h"  // "arduino-esp32-master" v2.0.14   (https://github.com/espressif/arduino-esp32/)
+#include "soc/mcpwm_struct.h"
 
-
-//#define USE_PROGMEM
-#define FIL_AC
 
 const int PAD_SD1=3, PAD_SCLK=2, PAD_RCLK=4, PAD_SD2=5; // shift register
 const int PAD_FIL0=9, PAD_FIL1=10;  // filament "A/C" waveform
 const int PAD_FIL0_ESP32 = 18, PAD_FIL1_ESP32 = 21; // ESP native pin numbers of above, for MCPWM API
 const int PAD_FIL_SR_CLK = 11, PAD_FIL_SR_MR_ = 12; // delay FIL shift register clk, reset
 const int PAD_FIL_SR_CLK_ESP32 = 38;
-const int PAD_MEASURE5V = A7;
+const int PAD_MEASURE5V = A0;
+const int PAD_MEASURE5V_ESP = 1;
 
 void clear_vfd(byte polarity=0);
 void pack_vfd();
@@ -59,11 +58,7 @@ struct {
   byte offTimeH, offTimeM;
 } g_state = {true, 65535, false};
 
-const 
-#ifdef USE_PROGMEM
-    PROGMEM 
-#endif
-vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
+const vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
   // inner ring
   { 
  
@@ -130,10 +125,13 @@ const byte NUM_PATTERN = 7;
 bool timerOn = true;
 bool filOn = true;
 
-#ifdef FIL_AC
-  mcpwm_config_t pwm_config_fil;
-  mcpwm_config_t pwm_config_fil_sr;
-#endif
+volatile uint32_t pwm_fil_period = 0;
+void fil_mcpwm_isr(void *);
+
+Preferences prefs;
+
+// time
+void get_time();
 
 //
 // Serial port command line
@@ -187,10 +185,22 @@ void cmd_parse(String &cmd) {
 
     Serial.print("offTime "); Serial.print(v); Serial.print(':'); Serial.println(v2);
   }
+
+  prefs.begin("snowflake", false);
+  prefs.putBool("enable", g_state.enable);
+  prefs.putUShort("pattern", g_state.pattern);
+  prefs.putBool("timerEnable", g_state.timerEnable);
+  prefs.putUChar("onTimeH", g_state.onTimeH);
+  prefs.putUChar("onTimeH", g_state.onTimeM);
+  prefs.putUChar("offTimeH", g_state.offTimeH);
+  prefs.putUChar("offTimeH", g_state.offTimeM);
+  prefs.end();
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  delay(1000);  
+  Serial.println("Starting");
   pinMode(PAD_SD1, OUTPUT);
   pinMode(PAD_SD2, OUTPUT);
   pinMode(PAD_SCLK, OUTPUT);
@@ -203,61 +213,108 @@ void setup() {
   digitalWrite(LED_BUILTIN, 1);
   digitalWrite(PAD_FIL_SR_MR_, 0);
 
-  EEPROM.get(0, g_state);
+  prefs.begin("snowflake", true);
+  g_state.enable = prefs.getBool("enable", true);
+  g_state.pattern = prefs.getUShort("pattern", 0x007b);
+  g_state.timerEnable = prefs.getBool("timerEnable", false);
+  g_state.onTimeH = prefs.getUChar("onTimeH", 5);
+  g_state.onTimeM = prefs.getUChar("onTimeH", 30);
+  g_state.offTimeH = prefs.getUChar("offTimeH", 22);
+  g_state.offTimeM = prefs.getUChar("offTimeH", 30);
+  prefs.end();
+  
+  Serial.print("eeprom pat: "); Serial.println(g_state.pattern, HEX);
+  Serial.print("eeprom en: "); Serial.println(g_state.enable);
+  Serial.print("eeprom timerEn: "); Serial.println(g_state.timerEnable);
 
+  analogReadResolution(12);
+  analogSetPinAttenuation(PAD_MEASURE5V, ADC_0db);
+
+  //
+  // Filament A/C clock
+  //
+
+  MCPWM0.int_ena.val = 0;
+  if (ESP_OK != mcpwm_isr_register(MCPWM_UNIT_0, fil_mcpwm_isr, 0, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_SHARED, 0)) {
+    Serial.println("mcpwm_isr_register failed");
+  }
   if (ESP_OK != mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PAD_FIL0_ESP32)) {
     Serial.println("gpio_init failed");
   }
-  if (ESP_OK != mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, PAD_FIL1_ESP32)) {
+  if (ESP_OK != mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PAD_FIL1_ESP32)) {
     Serial.println("gpio_init failed");
   }
   GPIO.func_out_sel_cfg[PAD_FIL1_ESP32].inv_sel = 1;  // invert
-  pwm_config_fil.frequency = 400;
-  pwm_config_fil.cmpr_a = 50;            // Duty cycle of PWMxA
-  pwm_config_fil.cmpr_b = 50;        // Note: the duty cycle of PWMxB is inverted (from where "100-x")
-  pwm_config_fil.counter_mode = MCPWM_UP_COUNTER;       // creates symetrical vaweforms
-  pwm_config_fil.duty_mode = MCPWM_DUTY_MODE_0;              //
+
+  mcpwm_config_t pwm_config_fil = {
+    .frequency = 400,
+    .cmpr_a = 50,            // Duty cycle of PWMxA
+    .duty_mode = MCPWM_DUTY_MODE_0,
+    .counter_mode = MCPWM_UP_COUNTER
+  };
   if (ESP_OK != mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config_fil)) {
     Serial.println("mcpwm_init sr failed");
   }
   if (ESP_OK != mcpwm_set_timer_sync_output(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_SWSYNC_SOURCE_TEZ)) {
     Serial.println("mcpwm_set_timer_sync failed");
   }
-
+  MCPWM0.timer[0].timer_cfg0.timer_period_upmethod = 1;
+  MCPWM0.timer[1].timer_cfg0.timer_period_upmethod = 1;
+  pwm_fil_period = MCPWM0.timer[0].timer_cfg0.timer_period;
+  Serial.print("pwm0 period "); Serial.println(pwm_fil_period);
+ 
+  //
+  // Filament delay shift register clock, 16x the A/C clock
+  //
   if (ESP_OK != mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, PAD_FIL_SR_CLK_ESP32)) {
     Serial.println("gpio-init sr failed");
   }
-  pwm_config_fil_sr.frequency = 400*16;
-  pwm_config_fil_sr.cmpr_a = 50;  
-  pwm_config_fil_sr.cmpr_b = 50;  
-  pwm_config_fil_sr.counter_mode = MCPWM_UP_COUNTER; 
-  pwm_config_fil_sr.duty_mode = MCPWM_DUTY_MODE_0;             
+  mcpwm_config_t pwm_config_fil_sr = {
+    .frequency = 400*16,
+    .cmpr_a = 50,
+    //.cmpr_b = 50,  
+    .duty_mode = MCPWM_DUTY_MODE_0,
+    .counter_mode = MCPWM_UP_COUNTER
+  };
   if (ESP_OK != mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config_fil_sr)) {
     Serial.println("mcpwm_init sr failed");
   }
   mcpwm_sync_config_t sync_config_sr = {
     .sync_sig = MCPWM_SELECT_TIMER0_SYNC,
-    .timer_val = 835,
+    .timer_val = 0,
     .count_direction = MCPWM_TIMER_DIRECTION_UP
   };
   if (ESP_OK != mcpwm_sync_configure(MCPWM_UNIT_0, MCPWM_TIMER_1, &sync_config_sr)) {
     Serial.println("mcpwm_sync_enable failed");
   }
+
   fil_disable();
 
   clear_vfd();
   pack_vfd();
   send_vfd();
+
+  get_time();
+
+  MCPWM0.int_ena.val = BIT(6);
+ 
+}
+
+void IRAM_ATTR fil_mcpwm_isr(void *)
+{
+  // random period between [0.5, 1.5] * nominal period
+  // use rand() instead of random(); the latter used true RNG and seems to deadlock when WiFi enabled?
+  uint32_t period = pwm_fil_period/2 + rand() % pwm_fil_period;
+  MCPWM0.timer[0].timer_cfg0.timer_period = period;
+  MCPWM0.timer[1].timer_cfg0.timer_period = period/16;  
+  MCPWM0.operators[0].timestamp[0].gen = period/2;
+  MCPWM0.operators[1].timestamp[0].gen = period/32;
+  MCPWM0.int_clr.val = BIT(6);
 }
 
 void fil_enable()
 {
-#ifdef FIL_AC
   digitalWrite(PAD_FIL_SR_MR_, 1);
-#else
-  //digitalWrite(PAD_FIL0, 1);
-  //digitalWrite(PAD_FIL1, 0);
-#endif
   digitalWrite(LED_BUILTIN,1);
   Serial.println("A/C enable");
   filOn = true;
@@ -266,8 +323,6 @@ void fil_enable()
 void fil_disable()
 {
   digitalWrite(PAD_FIL_SR_MR_, 0);
-  //digitalWrite(PAD_FIL0, 0);
-  //digitalWrite(PAD_FIL1, 0);
   digitalWrite(LED_BUILTIN,0);
   Serial.println("A/C disable");
   filOn = false;
@@ -275,10 +330,10 @@ void fil_disable()
 
 int getVoltage(void) {
   long a = analogRead(PAD_MEASURE5V);
-  // pin has Vcc * 1/(1+4.7).  ADC 0..1023 is 0..1.1V.
-  long mv = a * 3300l/4095l;
+  // pin has Vcc * 1/(1+4.7).  ADC 0..4095 is 0..1.1V.
+  long mv = a * 989l/4095l; // ideally 1100/4095 for 1.1V
   long scaled_mv = mv * 5700l/1000l;
-  Serial.print("raw "); Serial.print(a); Serial.print("; raw mV "); Serial.println(mv);
+  //Serial.print("raw "); Serial.print(a); Serial.print("; raw mV "); Serial.print(mv);
   //Serial.print("; scaled mV "); Serial.println(scaled_mv);
   return scaled_mv;
 }
@@ -293,11 +348,7 @@ void pack_vfd()
   for (byte r = 0; r < NUM_RAD; r ++) { // radius
     for (byte a = 0; a < vfd_per_radius[r]; a ++) {
       vfd_cfg_t cfg;
-#ifdef USE_PROGMEM      
-      memcpy_P(&cfg, &vfd_cfg[r][a], sizeof(cfg)); // copy from PROGMEM
-#else
       memcpy(&cfg, &vfd_cfg[r][a], sizeof(cfg));
-#endif            
       for (byte seg = 0; seg < NUM_SEG; seg ++) {
          int bitn = cfg.subcon * BITS_PER_SUBCON + tube_shift[cfg.tube] + cfg.seg_map[seg];
          packed_bits[bitn/8] |= vfd_state[r][a][seg] << (bitn%8);
@@ -384,10 +435,8 @@ void loop() {
     }
     prev_minute = now_m;
 
-    // write global config if changed
-    EEPROM.put(0, g_state);
   }
-
+  
   if (!checkVoltageGood() || !g_state.enable || g_state.pattern == 0 || (!timerOn && g_state.timerEnable)) {
     patternIndex = 255; // all zeros
   }
