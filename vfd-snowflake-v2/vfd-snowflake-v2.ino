@@ -130,8 +130,11 @@ void fil_mcpwm_isr(void *);
 
 Preferences prefs;
 
-// time
-void get_time();
+// net
+void init_wifi();
+void init_time();
+void init_webserver();
+void check_webserver();
 
 //
 // Serial port command line
@@ -294,8 +297,11 @@ void setup() {
   pack_vfd();
   send_vfd();
 
-  get_time();
+  init_wifi();
+  init_time();
+  init_webserver();
 
+  // init Filament PWM interrupt
   MCPWM0.int_ena.val = BIT(6);
  
 }
@@ -412,6 +418,7 @@ void loop() {
       cmd_parse(str);
     }
   }
+  check_webserver();
 
   static int prev_minute = 0;
   const int now_m = minute();
