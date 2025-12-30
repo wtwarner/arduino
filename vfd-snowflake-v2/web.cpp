@@ -2,26 +2,27 @@
 #include "Arduino.h"
 #include <WebServer.h>
 #include "TemplateTango.h"
+#include "global.h"
 
 String main_html { R"(
   <!DOCTYPE html>
 <head>
-   <title>VFD Snowflake Web Server</title>
+   <title>VFD Small Snowflake</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
 </head>
 
 <body>
-   <h1>VFD Snowflake</h1>
+   <h1>VFD Small Snowflake</h1>
 
 <div class="p-3">
 <form method="post">
 <h2>Power</h2>
 <div class="form-check form-switch">
-  <input class="form-check-input" type="checkbox" role="switch" id="power" name="power" value="1"
-  {{power_chk}}
+  <input class="form-check-input" type="checkbox" role="switch" id="enable" name="enable" value="1"
+  {{enable_chk}}
   >
-  <label class="form-check-label" for="power">Power On</label>
+  <label class="form-check-label" for="enable">Power On</label>
 </div>
 
 <h2>Pattern</h2>
@@ -102,21 +103,55 @@ String main_html { R"(
 
 WebServer server(80);
 
-void handleRoot() {
+const int NUM_PATTERNS = 7;
+String patterns[NUM_PATTERNS] = {
+  "cirOut1", "cirOut0", "test1", "rotate0", "rotate1", "spiral0", "spiral1"
+};
+  
+void handleRoot()
+{
+  // on POST, update state
+  if (server.method() == HTTP_POST) {
+    // switches and checkboxes are only sent if "1", so default to "0".
+    uint16_t pattern = 0;
+    bool enable = false;
+    bool timerEnable = false;
+    
+    for (int i = 0; i < server.args(); i ++) {
+      unsigned int val = strtol(server.arg(i).c_str(), 0, NULL);
+      if (server.argName(i) == "enable") { enable = val; }
+      else if (server.argName(i) == "timerEnable") { timerEnable = val; }
+      else if (server.argName(i) == "onTimeH") { g_state.onTimeH = val; }
+      else if (server.argName(i) == "onTimeM") { g_state.onTimeM = val; }
+      else if (server.argName(i) == "offTimeH") { g_state.offTimeH = val; }
+      else if (server.argName(i) == "offTimeM") { g_state.offTimeM = val; }
+      else {
+	for (int j = 0; j < NUM_PATTERNS; j ++) {
+	  if (server.argName(i) == patterns[j] && val != 0) {
+	    pattern |= (1 << j);
+	  }
+	}
+      }
+    }
+    g_state.enable = enable;
+    g_state.timerEnable = timerEnable;
+    g_state.pattern = pattern;
+
+    update_prefs();
+  }
+
+  // on either GET or POST, report current state by updating HTML template
   std::map<String, String> vars{
-   { "power_chk", "checked" },
-   { "cirOut1_chk", "checked" },
-   { "cirOut0_chk", "checked" },
-   { "test1_chk", "" },
-   { "rotate0_chk", "checked" },
-   { "rotate1_chk", "checked" },
-   { "spiral0_chk", "checked" },
-   { "spiral1_chk", "checked" },
-   { "onTimeH", "4" },
-   { "onTimeM", "30" },
-   { "offTimeH", "22" },
-   { "offTimeM", "30" },
+    { "enable_chk", g_state.enable ? "checked" : "" },
+    { "timerEnable_chk", g_state.timerEnable ? "checked" : "" },
+    { "onTimeH", String(g_state.onTimeH) },
+    { "onTimeM", String(g_state.onTimeM) },
+    { "offTimeH", String(g_state.offTimeH) },
+    { "offTimeM", String(g_state.offTimeM) },
   };
+  for (int i = 0; i < NUM_PATTERNS; i++) {
+    vars[patterns[i] + "_chk"] = String((g_state.pattern & (1 << i)) ? "checked" : "");
+  }
   String response = TemplateTango::render(main_html, vars);
   server.send(200, "text/html", response.c_str());
 }

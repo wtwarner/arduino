@@ -20,6 +20,7 @@
 #include "driver/mcpwm.h"  // "arduino-esp32-master" v2.0.14   (https://github.com/espressif/arduino-esp32/)
 #include "soc/mcpwm_struct.h"
 
+#include "global.h"
 
 const int PAD_SD1=3, PAD_SCLK=2, PAD_RCLK=4, PAD_SD2=5; // shift register
 const int PAD_FIL0=9, PAD_FIL1=10;  // filament "A/C" waveform
@@ -50,13 +51,7 @@ struct vfd_cfg_t {
 
 byte vfd_state[NUM_RAD][24][NUM_SEG];
 
-struct {
-  bool enable;
-  uint16_t pattern;
-  bool timerEnable;
-  byte onTimeH, onTimeM;
-  byte offTimeH, offTimeM;
-} g_state = {true, 65535, false};
+g_state_t g_state = {true, 65535, false};
 
 const vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
   // inner ring
@@ -130,12 +125,6 @@ void fil_mcpwm_isr(void *);
 
 Preferences prefs;
 
-// net
-void init_wifi();
-void init_time();
-void init_webserver();
-void check_webserver();
-
 //
 // Serial port command line
 //
@@ -189,14 +178,19 @@ void cmd_parse(String &cmd) {
     Serial.print("offTime "); Serial.print(v); Serial.print(':'); Serial.println(v2);
   }
 
+  update_prefs();
+}
+
+void update_prefs()
+{
   prefs.begin("snowflake", false);
   prefs.putBool("enable", g_state.enable);
   prefs.putUShort("pattern", g_state.pattern);
   prefs.putBool("timerEnable", g_state.timerEnable);
   prefs.putUChar("onTimeH", g_state.onTimeH);
-  prefs.putUChar("onTimeH", g_state.onTimeM);
+  prefs.putUChar("onTimeM", g_state.onTimeM);
   prefs.putUChar("offTimeH", g_state.offTimeH);
-  prefs.putUChar("offTimeH", g_state.offTimeM);
+  prefs.putUChar("offTimeM", g_state.offTimeM);
   prefs.end();
 }
 
@@ -221,9 +215,9 @@ void setup() {
   g_state.pattern = prefs.getUShort("pattern", 0x007b);
   g_state.timerEnable = prefs.getBool("timerEnable", false);
   g_state.onTimeH = prefs.getUChar("onTimeH", 5);
-  g_state.onTimeM = prefs.getUChar("onTimeH", 30);
+  g_state.onTimeM = prefs.getUChar("onTimeM", 30);
   g_state.offTimeH = prefs.getUChar("offTimeH", 22);
-  g_state.offTimeM = prefs.getUChar("offTimeH", 30);
+  g_state.offTimeM = prefs.getUChar("offTimeM", 30);
   prefs.end();
   
   Serial.print("eeprom pat: "); Serial.println(g_state.pattern, HEX);
