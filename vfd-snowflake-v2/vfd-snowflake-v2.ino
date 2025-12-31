@@ -344,10 +344,10 @@ bool checkVoltageGood()
 {
   // turn off filament if voltage sags
   const int v = getVoltage();
-  if (filOn && (!g_state.enable || v < 4500 || !timerOn)) {
+  if (filOn && (!g_state.enable || v < 4500 || (g_state.timerEnable && !timerOn))) {
     fil_disable();
   }
-  else if (!filOn && g_state.enable && v > 4700 && timerOn) {
+  else if (!filOn && g_state.enable && v > 4700 && (!g_state.timerEnable || timerOn)) {
     fil_enable();
   }
   return filOn;
@@ -396,7 +396,8 @@ void loop() {
     const int on_minute = g_state.onTimeH * 60 + g_state.onTimeM;
     bool turnOn = time_valid && (now_minute == on_minute);
     bool turnOff = time_valid && (now_minute == off_minute);
-
+    Serial.print("m UTC: "); Serial.print(hour()); Serial.print(":"); Serial.println(now_m);
+    Serial.print("m loc: "); Serial.print(tm.tm_hour); Serial.print(":"); Serial.println(tm.tm_min);
     if (g_state.timerEnable && turnOff) {
       timerOn = false;
       Serial.println("timer turn off");
@@ -404,6 +405,9 @@ void loop() {
     else if (g_state.timerEnable && turnOn) {
       timerOn = true;
       Serial.println("timer turn on");
+    }
+    else if (!g_state.timerEnable) {
+      timerOn = true;
     }
     prev_minute = now_m;
 
