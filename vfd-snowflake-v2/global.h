@@ -6,7 +6,7 @@ typedef struct {
   bool enable;
   uint16_t pattern;
   bool timerEnable;
-  byte onTimeH, onTimeM;
+  byte onTimeH, onTimeM;	// local time H:M
   byte offTimeH, offTimeM;
 } g_state_t;
 

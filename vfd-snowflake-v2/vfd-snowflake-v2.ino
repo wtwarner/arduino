@@ -1,12 +1,10 @@
-
 // VFD "snowflake" controller.
 //
-// Arduino Nano ESP32 clone
+// Arduino Nano ESP32 
 //
-// This controller talks to 10 sub-controllers.
+// This controller talks to up to 10 sub-controllers; only 4 are used in this design.
 // 16 bit shift register per sub-controller (for 4 VFD tubes => 12 segments). 
-// Shift register has two parallel SD pins, so 5*16 bits per SD pin.
-// Currently only 9 controllers are used (0..4 on SD1, 0..3 on SD2).  So last on SD2 is dummy.
+// Shift register has two parallel SD pins, so 2*16 bits per SD pin.
 // The shift register signals include SCLK (serial bit clock), RCLK (register clock), SD1/SD2.
 //
 // This controller sends a square wave on 2 pins (complementary pair) to sub-cons,
@@ -17,7 +15,7 @@
 #include <Preferences.h>
 #include <serial-readline.h>
 
-#include "driver/mcpwm.h"  // "arduino-esp32-master" v2.0.14   (https://github.com/espressif/arduino-esp32/)
+#include "driver/mcpwm.h"
 #include "soc/mcpwm_struct.h"
 
 #include "global.h"
@@ -28,20 +26,21 @@ const int PAD_FIL0_ESP32 = 18, PAD_FIL1_ESP32 = 21; // ESP native pin numbers of
 const int PAD_FIL_SR_CLK = 11, PAD_FIL_SR_MR_ = 12; // delay FIL shift register clk, reset
 const int PAD_FIL_SR_CLK_ESP32 = 38;
 const int PAD_MEASURE5V = A0;
-const int PAD_MEASURE5V_ESP = 1;
 
 void clear_vfd(byte polarity=0);
 void pack_vfd();
 void send_vfd();
 
-const int NUM_SEG = 3; // VFD tube has 2 segments
-const int NUM_RAD = 3; // VFD arranged into 3 radius levels
-const int NUM_SUBCON = 10; // VFD subcontrollers (4 tubes per sub-con)
-const int BITS_PER_SUBCON = 16;   // only 12 bits used (3 bits per tube, 4 tubes per sub-con)
+const int NUM_SEG = 3; // VFD tube has 3 segments
+const int NUM_RAD = 2; // VFD arranged into 2 radius levels
+const int NUM_ANG = 8; // 8 angles max
+const int NUM_SUBCON = 4; // VFD subcontrollers
+const int TUBES_PER_SUBCON = 4; // tubes per subcontrollers
+const int BITS_PER_SUBCON = 16;   // only 12 bits used (3 bits per tube * 4 tubes per sub-con)
 
 enum { SEG_L, SEG_M, SEG_H};
-const int tube_shift[4] = {13, 10, 5, 2};
-const int vfd_per_radius[3] = { 4, 8, 24 };
+const int tube_shift[TUBES_PER_SUBCON] = {13, 10, 5, 2}; // bit offset per tube 
+const int vfd_per_radius[NUM_RAD] = { 8, 8 };
 
 struct vfd_cfg_t {
   byte seg_map[3];
@@ -49,66 +48,32 @@ struct vfd_cfg_t {
   byte tube;
 };
 
-byte vfd_state[NUM_RAD][24][NUM_SEG];
+byte vfd_state[NUM_RAD][NUM_ANG][NUM_SEG];
 
 g_state_t g_state = {true, 65535, false};
 
-const vfd_cfg_t vfd_cfg[NUM_RAD][24] = { // [radius][angle]
+const vfd_cfg_t vfd_cfg[NUM_RAD][NUM_ANG] = { // [radius][angle]
   // inner ring
-  { 
- 
-    {{ 1,0,2}, 4, 2 },  // 45 deg.
-    {{ 1,0,2}, 4, 0 }, 
-    {{ 1,0,2}, 4, 1 }, 
-    {{ 0,1,2}, 4, 3 }, 
-    {{0}}
-  }, 
-  // mid ring
   {
-    {{ 2,0,1}, 3, 0 }, // 0 deg.
-    {{ 2,0,1}, 2, 0 }, // 45 deg.
+    {{ 2,0,1}, 0, 0 }, // 0 deg.
+    {{ 2,0,1}, 0, 1 }, // 45 deg.
     {{ 2,0,1}, 1, 0 }, // 90 deg
-    {{ 2,0,1}, 0, 0 }, // 135 deg.
-    {{ 2,0,1}, 9, 0 },
-    {{ 2,0,1}, 8, 0 },
-    {{ 2,0,1}, 7, 0 },
-    {{ 2,0,1}, 6, 0 }, // 225 deg.
+    {{ 2,0,1}, 1, 1 }, // 135 deg.
+    {{ 2,0,1}, 2, 0 },
+    {{ 2,0,1}, 2, 1 },
+    {{ 2,0,1}, 3, 0 },
+    {{ 2,0,1}, 3, 1 }, // 225 deg.
   },
   // outer ring
   {
-    {{ 1,0,2}, 3, 3 },
-    {{ 1,0,2}, 3, 2 },
-    {{ 1,0,2}, 3, 1 },
-
-    {{ 1,0,2}, 2, 3 }, 
-    {{ 1,0,2}, 2, 2 },
-    {{ 1,0,2}, 2, 1 },
-
-    {{ 1,0,2}, 1, 3 },
-    {{ 1,0,2}, 1, 2 },            
-    {{ 1,0,2}, 1, 1 },
-
-    {{ 1,0,2}, 0, 3 },
-    {{ 1,0,2}, 0, 2 },
-    {{ 1,0,2}, 0, 1 }, 
-
-    {{ 1,0,2}, 9, 3 },
-    {{ 1,0,2}, 9, 2 },
-    {{ 1,0,2}, 9, 1 }, 
-    
-    {{ 1,0,2}, 8, 3 },
-    {{ 1,0,2}, 8, 2 },
-    {{ 1,0,2}, 8, 1 },
-
-    {{ 1,0,2}, 7, 3 },  
-    {{ 1,0,2}, 7, 2 },
-    {{ 1,0,2}, 7, 1 },
-
-    {{ 1,0,2}, 6, 3 },
-    {{ 1,0,2}, 6, 2 }, 
-    {{ 1,0,2}, 6, 1 },
-
-
+    {{ 2,0,1}, 0, 2 }, // 0 deg.
+    {{ 2,0,1}, 0, 3 }, // 45 deg.
+    {{ 2,0,1}, 1, 2 }, // 90 deg
+    {{ 2,0,1}, 1, 3 }, // 135 deg.
+    {{ 2,0,1}, 2, 2 },
+    {{ 2,0,1}, 2, 3 },
+    {{ 2,0,1}, 3, 2 },
+    {{ 2,0,1}, 3, 3 }, // 225 deg.
   }
 };
 
@@ -147,6 +112,10 @@ void cmd_parse(String &cmd) {
   if (cmd.startsWith("t?")) {
      Serial.println(now());
      Serial.print(hour()); Serial.print(":"); Serial.println(minute());
+    struct tm tm;
+    time_t time_now = now();
+    localtime_r(&time_now, &tm);
+    Serial.print("local: "); Serial.println(&tm, "%A, %B %d %Y %H:%M:%S");
   }
   else if (cmd.startsWith("pwr:")) {
     g_state.enable = (v == 1);
@@ -417,14 +386,16 @@ void loop() {
   static int prev_minute = 0;
   const int now_m = minute();
   if (now_m != prev_minute) {
-    bool time_valid = now() > 1765734060l;
-    const int now_minute = hour() * 60 + now_m;
+    const time_t time_now = now();
+    bool time_valid = time_now > 1765734060l; // arbitrary
+    // timer on/off are local; 'now' time_t is UTC.  Convert UTC to local for comparision.
+    struct tm tm;
+    localtime_r(&time_now, &tm);
+    const int now_minute = tm.tm_hour * 60 + tm.tm_min;
     const int off_minute = g_state.offTimeH * 60 + g_state.offTimeM;
     const int on_minute = g_state.onTimeH * 60 + g_state.onTimeM;
     bool turnOn = time_valid && (now_minute == on_minute);
     bool turnOff = time_valid && (now_minute == off_minute);
-    Serial.print("m: "); Serial.print(hour()); Serial.print(":"); Serial.println(now_m);
-    Serial.print("now_min "); Serial.println(now_minute);
 
     if (g_state.timerEnable && turnOff) {
       timerOn = false;
@@ -502,15 +473,15 @@ void circle_outward(byte polarity) {
 }
 
 void rotate(byte dir) {
-  for (byte a = dir ? 25 : 0; dir ? (a > 0) : (a < 25); a += dir ? -1 : 1) {
+  for (byte a = dir ? (NUM_ANG+1) : 0; dir ? (a > 0) : (a < NUM_ANG); a += dir ? -1 : 1) {
     clear_vfd();
     for (byte r = 0; r < NUM_RAD; r++) {
-      byte a_offset = (r == 0) ? 3 : 0;
+      byte a_offset = (r == 0) ? 1 : 0;
       for (byte s = 0; s < NUM_SEG; s++) {
-        vfd_state[r][(a + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
-        vfd_state[r][(a + 6 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
-        vfd_state[r][(a + 12 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
-        vfd_state[r][(a + 18 + a_offset) % 24 / (24/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a +     a_offset) % NUM_ANG / (NUM_ANG/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 2 + a_offset) % NUM_ANG / (NUM_ANG/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 4 + a_offset) % NUM_ANG / (NUM_ANG/vfd_per_radius[r])][s] = 1;
+        vfd_state[r][(a + 6 + a_offset) % NUM_ANG / (NUM_ANG/vfd_per_radius[r])][s] = 1;
       }
     }
     pack_vfd();
