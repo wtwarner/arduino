@@ -2,13 +2,16 @@
 //
 // Arduino Nano ESP32 
 //
-// This controller talks to up to 10 sub-controllers; only 4 are used in this design.
-// 16 bit shift register per sub-controller (for 4 VFD tubes => 12 segments). 
-// Shift register has two parallel SD pins, so 2*16 bits per SD pin.
+// This controller talks to up to 10 sub-controllers [only 4 in this design].
+// A 16 bit shift register per sub-controller (for 4 VFD tubes => 12 segments). 
+// Shift register output has up to two parallel SD pins [only 1 in this design]
 // The shift register signals include SCLK (serial bit clock), RCLK (register clock), SD1/SD2.
 //
 // This controller sends a square wave on 2 pins (complementary pair) to sub-cons,
 // which use H-Bridges to make A/C for the filaments.
+// The filament square wave pair (FIL0,1) is delayed by a shift register to spread power supply audible noise;
+// the shift register has clock (SR_CLK) and reset (SR_MR_) pins.
+// The filament square wave and SR_CLK are randomly changed in frequency to reduce audible noise.
 //
 #include <TimeLib.h>
 #include <Array.h>
@@ -33,14 +36,15 @@ void send_vfd();
 
 const int NUM_SEG = 3; // VFD tube has 3 segments
 const int NUM_RAD = 2; // VFD arranged into 2 radius levels
-const int NUM_ANG = 8; // 8 angles max
+const int NUM_ANG = 12; // max angles per radius
 const int NUM_SUBCON = 4; // VFD subcontrollers
 const int TUBES_PER_SUBCON = 4; // tubes per subcontrollers
 const int BITS_PER_SUBCON = 16;   // only 12 bits used (3 bits per tube * 4 tubes per sub-con)
+#define NUM_SD 1
 
 enum { SEG_L, SEG_M, SEG_H};
 const int tube_shift[TUBES_PER_SUBCON] = {13, 10, 5, 2}; // bit offset per tube 
-const int vfd_per_radius[NUM_RAD] = { 8, 8 };
+const int vfd_per_radius[NUM_RAD] = { 4, 12 };
 
 struct vfd_cfg_t {
   byte seg_map[3];
@@ -55,25 +59,25 @@ g_state_t g_state = {true, 65535, false};
 const vfd_cfg_t vfd_cfg[NUM_RAD][NUM_ANG] = { // [radius][angle]
   // inner ring
   {
-    {{ 2,0,1}, 0, 0 }, // 0 deg.
-    {{ 2,0,1}, 0, 1 }, // 45 deg.
-    {{ 2,0,1}, 1, 0 }, // 90 deg
-    {{ 2,0,1}, 1, 1 }, // 135 deg.
-    {{ 2,0,1}, 2, 0 },
-    {{ 2,0,1}, 2, 1 },
-    {{ 2,0,1}, 3, 0 },
-    {{ 2,0,1}, 3, 1 }, // 225 deg.
+    {{ 1,0,2}, 0, 0 },
+    {{ 1,0,2}, 1, 0 },
+    {{ 1,0,2}, 2, 0 },
+    {{ 1,0,2}, 3, 0 },
   },
   // outer ring
   {
-    {{ 2,0,1}, 0, 2 }, // 0 deg.
-    {{ 2,0,1}, 0, 3 }, // 45 deg.
-    {{ 2,0,1}, 1, 2 }, // 90 deg
-    {{ 2,0,1}, 1, 3 }, // 135 deg.
-    {{ 2,0,1}, 2, 2 },
-    {{ 2,0,1}, 2, 3 },
-    {{ 2,0,1}, 3, 2 },
-    {{ 2,0,1}, 3, 3 }, // 225 deg.
+    {{ 1,0,2}, 0, 1 },
+    {{ 1,0,2}, 0, 2 },
+    {{ 1,0,2}, 0, 3 },
+    {{ 1,0,2}, 1, 1 },
+    {{ 1,0,2}, 1, 2 },
+    {{ 1,0,2}, 1, 3 },
+    {{ 1,0,2}, 2, 1 },
+    {{ 1,0,2}, 2, 2 },
+    {{ 1,0,2}, 2, 3 },
+    {{ 1,0,2}, 3, 1 },
+    {{ 1,0,2}, 3, 2 },
+    {{ 1,0,2}, 3, 3 },
   }
 };
 
@@ -89,6 +93,9 @@ volatile uint32_t pwm_fil_period = 0;
 void fil_mcpwm_isr(void *);
 
 Preferences prefs;
+
+// test1 test mode
+byte test_mode=0, test_r=0, test_a=0, test_s=0;
 
 //
 // Serial port command line
@@ -146,6 +153,18 @@ void cmd_parse(String &cmd) {
 
     Serial.print("offTime "); Serial.print(v); Serial.print(':'); Serial.println(v2);
   }
+  else if (cmd.startsWith("tm:")) {
+      test_mode = v;
+  }
+  else if (cmd.startsWith("tr:")) {
+      test_r = v;
+  }
+  else if (cmd.startsWith("ta:")) {
+      test_a = v;
+  }
+  else if (cmd.startsWith("ts:")) {
+      test_s = v;
+  }
 
   update_prefs();
 }
@@ -168,7 +187,9 @@ void setup() {
   delay(1000);  
   Serial.println("Starting");
   pinMode(PAD_SD1, OUTPUT);
+#if NUM_SD > 1
   pinMode(PAD_SD2, OUTPUT);
+#endif
   pinMode(PAD_SCLK, OUTPUT);
   pinMode(PAD_RCLK, OUTPUT);
   pinMode(PAD_FIL0, OUTPUT);
@@ -273,7 +294,7 @@ void IRAM_ATTR fil_mcpwm_isr(void *)
 {
   // random period between [0.5, 1.5] * nominal period
   // use rand() instead of random(); the latter used true RNG and seems to deadlock when WiFi enabled?
-  uint32_t period = pwm_fil_period/2 + rand() % pwm_fil_period;
+  const uint32_t period = pwm_fil_period/2 + rand() % pwm_fil_period;
   MCPWM0.timer[0].timer_cfg0.timer_period = period;
   MCPWM0.timer[1].timer_cfg0.timer_period = period/16;  
   MCPWM0.operators[0].timestamp[0].gen = period/2;
@@ -328,11 +349,13 @@ void pack_vfd()
 
 void send_vfd()
 {
-  const int bits_per_sd = NUM_SUBCON*BITS_PER_SUBCON/2;
+  const int bits_per_sd = NUM_SUBCON*BITS_PER_SUBCON/NUM_SD;
   for (int bit_sd1 = 0; bit_sd1 < bits_per_sd; bit_sd1 ++) {
-    int bit_sd2 = bits_per_sd + bit_sd1;
     digitalWrite(PAD_SD1, (packed_bits[bit_sd1/8] >> (bit_sd1%8)) & 1);
+#if NUM_SD > 1    
+    const int bit_sd2 = bits_per_sd + bit_sd1;
     digitalWrite(PAD_SD2, (packed_bits[bit_sd2/8] >> (bit_sd2%8)) & 1);
+#endif
     digitalWrite(PAD_SCLK, 1);
     digitalWrite(PAD_SCLK, 0);
   }
@@ -442,17 +465,27 @@ void loop() {
 }
 
 void test1(byte polarity) {
-  for (byte s = 0; s < NUM_SEG; s++) {
-    clear_vfd(!polarity);
-    for (byte r = 0; r < NUM_RAD; r++) {
-      for (byte a = 0; a < vfd_per_radius[r]; a++) {
-        vfd_state[r][a][s] = polarity;
-      }
+    if (test_mode) {
+          clear_vfd(0);
+          Serial.print("r "); Serial.print(test_r); Serial.print(", a "); Serial.print(test_a); Serial.print(", s "); Serial.println(test_s);
+          vfd_state[test_r][test_a][test_s] = 1;
+          pack_vfd();
+          send_vfd();
+          DELAY(1000);
     }
-    pack_vfd();
-    send_vfd();
-    DELAY(200); 
-  }
+    else {
+        for (byte s = 0; s < NUM_SEG; s++) {
+            clear_vfd(!polarity);
+            for (byte r = 0; r < NUM_RAD; r++) {
+                for (byte a = 0; a < vfd_per_radius[r]; a++) {
+                    vfd_state[r][a][s] = polarity;
+                }
+            }
+            pack_vfd();
+            send_vfd();
+            DELAY(200); 
+        }
+    }
 }
 
 void all_constant(byte v) {
@@ -490,7 +523,7 @@ void rotate(byte dir) {
     }
     pack_vfd();
     send_vfd();
-    DELAY(50);
+    DELAY(200);
   }
 }
 
