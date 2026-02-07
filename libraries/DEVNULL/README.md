@@ -2,8 +2,11 @@
 [![Arduino CI](https://github.com/RobTillaart/DEVNULL/workflows/Arduino%20CI/badge.svg)](https://github.com/marketplace/actions/arduino_ci)
 [![Arduino-lint](https://github.com/RobTillaart/DEVNULL/actions/workflows/arduino-lint.yml/badge.svg)](https://github.com/RobTillaart/DEVNULL/actions/workflows/arduino-lint.yml)
 [![JSON check](https://github.com/RobTillaart/DEVNULL/actions/workflows/jsoncheck.yml/badge.svg)](https://github.com/RobTillaart/DEVNULL/actions/workflows/jsoncheck.yml)
+[![GitHub issues](https://img.shields.io/github/issues/RobTillaart/DEVNULL.svg)](https://github.com/RobTillaart/DEVNULL/issues)
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/RobTillaart/DEVNULL/blob/master/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/RobTillaart/DEVNULL.svg?maxAge=3600)](https://github.com/RobTillaart/DEVNULL/releases)
+[![PlatformIO Registry](https://badges.registry.platformio.org/packages/robtillaart/library/DEVNULL.svg)](https://registry.platformio.org/libraries/robtillaart/DEVNULL)
 
 
 # DEVNULL
@@ -30,25 +33,34 @@ with only a return 0; (or at least **print(Type)** as the **println(T)** would o
 call once extra for the "\n".
 
 
-#### Version 0.1.2
+### Related
 
-- sets the timeout for reading to 0. No need to wait longer with DEVNULl.
-  this improves the **find(...)** calls substantially.
-- added **size_t write( const uint8_t \*buffer, size_t size)** for faster string processing.
+- https://github.com/RobTillaart/DEVFULL
+- https://github.com/RobTillaart/DEVNULL
+- https://github.com/RobTillaart/DEVRANDOM
 
 
 ## Interface
 
+```cpp
+#include "DEVNULL.h"
+```
+
+### Constructor
+
 - **DEVNULL()** constructor, sets the timeout to zero.
+
+### Stream interface
+
 - **int available()** always return zero.
 - **int peek()** always returns EOF.
 - **int read()** always return EOF.
 - **void flush()** does nothing but keeps some compilers happy.
 - **size_t write(const uint8_t data)** implements print interface. returns 1.
-
-0.1.2 added to improve performance a few percent (UNO).
-
-- **size_t write( const uint8_t \*buffer, size_t size)** implements print interface. returns size.
+- **size_t write( const uint8_t \*buffer, size_t size)** implements print interface.
+Returns size.
+- **int lastByte()** returns last byte written (debug and test purpose).
+Returns -1 if no byte has been written yet.
 
 
 ## Operation
@@ -60,11 +72,35 @@ See examples.
 
 ## Future
 
-- add optional delay to mimic pause / tune behaviour for simulating other devices
-  microseconds - milliseconds?
-  delay per byte or per call to write? (esp long arrays might need other performance
-  feels out of scope for /dev/null
-- add byte counter (uint32_t)
-- add lastWrittenByte() - look at the last byte written to the bottomless pit.
+#### Must
 
+#### Should
+
+#### Could
+
+- add byte counter (uint32_t)
+- investigate if DEVNULL can be used to harvest entropy?
+  - sum xor of all data + timestamp?
+  - enable / disable flag (complex)
+  - => /dev/entropy class?
+- **flush()** could reset bottomLessPit to -1?
+
+
+#### Wont
+
+- add delay to mimic pause / tune behaviour for simulating devices
+  - microseconds
+  - delay per byte, esp long arrays might need other performance
+  - out of scope for /dev/null => separate class?
+- implement Print class to increase performance?
+  - derived class?
+
+
+## Support
+
+If you appreciate my libraries, you can support the development and maintenance.
+Improve the quality of the libraries by providing issues and Pull Requests, or
+donate through PayPal or GitHub sponsors.
+
+Thank you,
 

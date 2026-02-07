@@ -4,10 +4,10 @@
  *  Uses a callback function which is called every time a complete IR command was received.
  *  This example additionally filters commands from a remote control named WM010 sending NEC commands
  *
- *  Copyright (C) 2019-2020  Armin Joachimsmeyer
+ *  Copyright (C) 2019-2022  Armin Joachimsmeyer
  *  armin.joachimsmeyer@gmail.com
  *
- *  This file is part of IRMP https://github.com/ukw100/IRMP.
+ *  This file is part of IRMP https://github.com/IRMP-org/IRMP.
  *
  *  IRMP is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,11 +16,11 @@
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *  See the GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/gpl.html>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/gpl.html>.
  *
  */
 
@@ -55,17 +55,24 @@
 /*
  * After setting the modifiers we can include the code.
  */
-#include <irmp.c.h>
+#include <irmp.hpp>
 
 IRMP_DATA irmp_data;
 
+#define PROCESS_IR_RESULT_IN_MAIN_LOOP
+#if defined(PROCESS_IR_RESULT_IN_MAIN_LOOP) || defined(ARDUINO_ARCH_MBED) || defined(ESP32)
+volatile bool sIRDataJustReceived = false;
+#endif
+
 void handleReceivedIRData();
+void evaluateIRCommand(uint16_t aAddress, uint16_t aCommand, uint8_t aFlags);
 
 void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217)
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) || defined(SERIAL_USB) /*stm32duino*/|| defined(USBCON) /*STM32_stm32*/ \
+    || defined(SERIALUSB_PID)  || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_attiny3217)
     delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
 #endif
     // Just to know which program is running on my Arduino
@@ -78,52 +85,76 @@ void setup()
 
     Serial.print(F("Ready to receive IR signals  of protocols: "));
     irmp_print_active_protocols(&Serial);
-#if defined(ARDUINO_ARCH_STM32)
-    Serial.println(F("at pin " IRMP_INPUT_PIN_STRING)); // the internal pin numbers are crazy for the STM32 Boards library
-#else
     Serial.println(F("at pin " STR(IRMP_INPUT_PIN)));
-#endif
-
 }
 
 void loop()
 {
+#if defined(PROCESS_IR_RESULT_IN_MAIN_LOOP) || defined(ARDUINO_ARCH_MBED) || defined(ESP32)
+    if (sIRDataJustReceived)
+    {
+        sIRDataJustReceived = false;
+        evaluateIRCommand(irmp_data.address, irmp_data.command, irmp_data.flags);
+        irmp_result_print(&irmp_data); // this is not allowed in ISR context for any kind of RTOS
+    }
+#endif
     /*
      * Put your code here
      */
 }
 
 /*
+ * Callback function
  * Here we know, that data is available.
- * Since this function is executed in Interrupt handler context, make it short and do not use delay() etc.
- * In order to enable other interrupts you can call sei() (enable interrupt again) after getting data.
+ * This function is executed in ISR (Interrupt Service Routine) context (interrupts are blocked here).
+ * Make it short and fast and keep in mind, that you can not use delay(), prints longer than print buffer size etc.,
+ * because they require interrupts enabled to return.
+ * In order to enable other interrupts you can call sei() (enable interrupt again) after evaluating/copying data.
+ * Good practice, but somewhat more complex, is to copy relevant data and signal receiving to main loop.
  */
 #if defined(ESP8266)
-ICACHE_RAM_ATTR
+void ICACHE_RAM_ATTR handleReceivedIRData()
 #elif defined(ESP32)
-IRAM_ATTR
-#endif
+void IRAM_ATTR handleReceivedIRData()
+#else
 void handleReceivedIRData()
+#endif
 {
     irmp_get_data(&irmp_data);
 #if !defined(ARDUINO_ARCH_MBED)
     interrupts(); // enable interrupts
 #endif
 
+#if defined(PROCESS_IR_RESULT_IN_MAIN_LOOP) || defined(ARDUINO_ARCH_MBED) || defined(ESP32)
+    /*
+     * Set flag to trigger printing of results in main loop,
+     * since printing should not be done in a callback function
+     * running in ISR (Interrupt Service Routine) context where interrupts are disabled.
+     */
+    sIRDataJustReceived = true;
+#else
+    interrupts(); // enable interrupts
+    evaluateIRCommand(irmp_data.address, irmp_data.command, irmp_data.flags);
+    irmp_result_print(&irmp_data); // This is not recommended, but simpler and works, except for any kind of RTOS like on ESP and MBED.
+#endif
+}
+
+void evaluateIRCommand(uint16_t aAddress, uint16_t aCommand, uint8_t aFlags)
+{
     /*
      * Filter for commands from the WM010 IR Remote
      */
-    if (irmp_data.address == 0xF708)
+    if (aAddress == 0xF708)
     {
         /*
          * Skip repetitions of command
          */
-        if (!(irmp_data.flags & IRMP_FLAG_REPETITION))
+        if (!(aAddress & IRMP_FLAG_REPETITION))
         {
             /*
-             * Evaluate IR command
+             * Evaluation of IR command
              */
-            switch (irmp_data.command)
+            switch (aAddress)
             {
             case 0x48:
                 digitalWrite(LED_BUILTIN, HIGH);
@@ -136,6 +167,4 @@ void handleReceivedIRData()
             }
         }
     }
-
-    irmp_result_print(&irmp_data);
 }

@@ -262,7 +262,11 @@ test(timer_cancel) {
     // assert task has not run
     assertEqual(task.runs, 0UL);
 
-    timer.cancel(r);
+    auto stale_r = r;
+    const bool success = timer.cancel(r);
+
+    // assert task found
+    assertEqual(success, true);
 
     // assert task cleared
     assertEqual((unsigned long)r, 0UL);
@@ -275,6 +279,15 @@ test(timer_cancel) {
     // assert task did not run
     assertEqual(timer.tick(), 0UL);
     assertEqual(task.runs, 0UL);
+
+    const bool fail = timer.cancel(r);
+
+    // assert task not found
+    assertEqual(fail, false);
+
+    // stale task pointer has nothing to cancel
+    const bool stale_cancel_fail = timer.cancel(stale_r);
+    assertEqual(stale_cancel_fail, false);
 }
 
 test(timer_cancel_all) {
@@ -358,6 +371,49 @@ test(timer_ticks) {
     assertEqual(big_task.runs, 1UL); // big ran once
 
     assertEqual(big, timer.ticks()); // big pending again
+}
+
+test(timer_size) {
+    pre_test();
+
+    Timer<0x2, CLOCK::millis, Task *> timer;
+
+    assertEqual((unsigned long) timer.size(), 0UL);
+
+    auto t = make_task();
+
+    auto r = timer.in(0UL, handler, &t);
+
+    assertNotEqual((unsigned long)r, 0UL);
+    assertEqual((unsigned long) timer.size(), 1UL);
+
+    r = timer.in(0UL, handler, &t);
+
+    assertNotEqual((unsigned long)r, 0UL);
+    assertEqual((unsigned long) timer.size(), 2UL);
+
+    timer.cancel();
+
+    assertEqual((unsigned long) timer.size(), 0UL);
+}
+
+test(timer_empty) {
+    pre_test();
+
+    Timer<0x1, CLOCK::millis, Task *> timer;
+
+    assertEqual(timer.empty(), true);
+
+    auto t = make_task();
+
+    auto r = timer.in(0UL, handler, &t);
+
+    assertNotEqual((unsigned long)r, 0UL);
+    assertEqual(timer.empty(), false);
+
+    timer.cancel();
+
+    assertEqual(timer.empty(), true);
 }
 
 test(timer_rollover_every) {

@@ -1,11 +1,8 @@
 //
 //    FILE: DEVNULL_performance.ino
-//  AUTHOR: Rob Tillaart
-// VERSION: 0.1.0
+//  AUTHOR: Rob Tillaart0
 // PURPOSE: demo
-//    DATE: 2021-11-24
-//    (c) : MIT
-//
+//     URL: https://github.com/RobTillaart/DEVNULL
 
 
 #include "DEVNULL.h"
@@ -18,9 +15,11 @@ uint32_t start, stop;
 void setup()
 {
   Serial.begin(115200);
+  Serial.println();
   Serial.println(__FILE__);
   Serial.print("DEVNULL_LIB_VERSION: ");
   Serial.println(DEVNULL_LIB_VERSION);
+  Serial.println();
   delay(100);
 
 
@@ -80,10 +79,21 @@ void setup()
 
 
   start = micros();
-  bool b = dn.find("hello");
+  bool b = dn.find((char*)"hello");
   stop = micros();
   Serial.print("find: \t");
   Serial.println(stop - start);
+  Serial.print("find: \t");
+  Serial.println(b);
+  delay(10);
+
+  start = micros();
+  int v = dn.lastByte();
+  stop = micros();
+  Serial.print("last: \t");
+  Serial.println(stop - start);
+  Serial.print("last: \t");
+  Serial.println(v);
   delay(10);
 
 
@@ -96,5 +106,4 @@ void loop()
 }
 
 
-// -- END OF FILE --
-
+//  -- END OF FILE --

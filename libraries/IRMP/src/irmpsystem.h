@@ -58,6 +58,17 @@
 #  include <stm32f4xx.h>
 #  define ARM_STM32
 #  define ARM_STM32F4XX
+#  define F_CPU (SysCtlClockGet())
+
+#elif defined(STM32L1) ||  defined(STM32F1) || defined(STM32F3) || defined(STM32F4) // ARM STM32 OPENCM3
+#  include <stdint.h>
+#  include <libopencm3/stm32/gpio.h>
+#  include <libopencm3/stm32/timer.h>
+#  include <libopencm3/cm3/nvic.h>
+#  include <libopencm3/stm32/rcc.h>
+#  include "../config.h"
+#  define ARM_STM32_OPENCM3
+#  define F_CPU rcc_ahb_frequency
 
 #elif defined(USE_HAL_DRIVER)                                                       // ARM STM32 with HAL Library
 #  include "gpio.h"
@@ -104,7 +115,7 @@
 
 #include <string.h>
 
-#ifdef UNIX_OR_WINDOWS                                                              // Analyze on Unix/Linux or Windows
+#if defined(UNIX_OR_WINDOWS)                                                              // Analyze on Unix/Linux or Windows
 #  include <stdio.h>
 #  include <stdlib.h>
 #  define F_CPU 8000000L
@@ -214,7 +225,7 @@ typedef unsigned short                  uint_fast16_t;
 #  define IRSND_PIC_CCP2                2                                           // PIC C18 RC1 = PWM2 module
 #endif
 
-#ifndef TRUE
+#if !defined(TRUE)
 #  define TRUE                          1
 #  define FALSE                         0
 #endif
@@ -227,7 +238,7 @@ typedef unsigned short                  uint_fast16_t;
 #if defined(PIC_C18)
 #  define IRMP_PACKED_STRUCT
 #else
-#  ifndef IRMP_PACKED_STRUCT
+#  if !defined(IRMP_PACKED_STRUCT)
 #    define IRMP_PACKED_STRUCT          __attribute__ ((__packed__))
 #  endif
 #endif

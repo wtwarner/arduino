@@ -2,7 +2,7 @@
 
 #define IRMP_SUPPORT_NEC_PROTOCOL 1
 #define IRMP_INPUT_PIN 3
-#include <irmp.c.h>
+#include <irmp.hpp>
 
 IRMP_DATA irmp_data;
 
@@ -18,7 +18,7 @@ bool ir_check(ir_cmd_t &cmd, bool &rep)
     cmd = IR_UNKNOWN;
     rep = false;
     
-    if (irmp_get_data(&irmp_data) && irmp_data.address == 0xff00)
+    if (irmp_get_data(&irmp_data) && irmp_data.address == 0x0000)
     {
         /*
          * Serial output

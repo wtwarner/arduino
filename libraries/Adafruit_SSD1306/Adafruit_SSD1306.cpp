@@ -36,9 +36,12 @@
  *
  */
 
-#ifdef __AVR__
+#if defined(__AVR__) || defined(ARDUINO_ARCH_RTTHREAD)
 #include <avr/pgmspace.h>
-#elif defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040)
+#elif defined(ARDUINO_ARDUINO_NANO33BLE) ||                                    \
+    defined(ARDUINO_ARCH_MBED_RP2040) || defined(ARDUINO_ARCH_RP2040)
+#include <api/deprecated-avr-comp/avr/pgmspace.h>
+#elif defined(ESP8266) || defined(ESP32)
 #include <pgmspace.h>
 #else
 #define pgm_read_byte(addr)                                                    \
@@ -46,7 +49,8 @@
 #endif
 
 #if !defined(__ARM_ARCH) && !defined(ENERGIA) && !defined(ESP8266) &&          \
-    !defined(ESP32) && !defined(__arc__)
+    !defined(ESP32) && !defined(__arc__) && !defined(__RL78__) &&              \
+    !defined(CH32V20x) && !defined(PICO_RISCV)
 #include <util/delay.h>
 #endif
 
@@ -88,7 +92,7 @@
 #define SSD1306_MODE_DATA digitalWrite(dcPin, HIGH);   ///< Data mode
 #endif
 
-#if 0 && (ARDUINO >= 157) && !defined(ARDUINO_STM32_FEATHER)
+#if (ARDUINO >= 157) && !defined(ARDUINO_STM32_FEATHER)
 #define SETWIRECLOCK wire->setClock(wireClk)    ///< Set before I2C transfer
 #define RESWIRECLOCK wire->setClock(restoreClk) ///< Restore after I2C xfer
 #else // setClock() is not present in older Arduino Wire lib (or WICED)
@@ -168,10 +172,10 @@
     @note   Call the object's begin() function before use -- buffer
             allocation is performed there!
 */
-Adafruit_SSD1306::Adafruit_SSD1306(uint8_t w, uint8_t h, WireInterface *twi,
+Adafruit_SSD1306::Adafruit_SSD1306(uint8_t w, uint8_t h, TwoWire *twi,
                                    int8_t rst_pin, uint32_t clkDuring,
                                    uint32_t clkAfter)
-    : Adafruit_GFX(w, h), spi(NULL), wire(twi), buffer(NULL),
+    : Adafruit_GFX(w, h), spi(NULL), wire(twi ? twi : &Wire), buffer(NULL),
       mosiPin(-1), clkPin(-1), dcPin(-1), csPin(-1), rstPin(rst_pin)
 #if ARDUINO >= 157
       ,
@@ -328,7 +332,7 @@ Adafruit_SSD1306::Adafruit_SSD1306(int8_t dc_pin, int8_t rst_pin, int8_t cs_pin)
             allocation is performed there!
 */
 Adafruit_SSD1306::Adafruit_SSD1306(int8_t rst_pin)
-    : Adafruit_GFX(SSD1306_LCDWIDTH, SSD1306_LCDHEIGHT), spi(NULL), wire(NULL),
+    : Adafruit_GFX(SSD1306_LCDWIDTH, SSD1306_LCDHEIGHT), spi(NULL), wire(&Wire),
       buffer(NULL), mosiPin(-1), clkPin(-1), dcPin(-1), csPin(-1),
       rstPin(rst_pin) {}
 
@@ -595,6 +599,9 @@ bool Adafruit_SSD1306::begin(uint8_t vcs, uint8_t addr, bool reset,
   } else if ((WIDTH == 96) && (HEIGHT == 16)) {
     comPins = 0x2; // ada x12
     contrast = (vccstate == SSD1306_EXTERNALVCC) ? 0x10 : 0xAF;
+  } else if ((WIDTH == 64) && (HEIGHT == 32)) {
+    comPins = 0x12; // ada x12
+    contrast = (vccstate == SSD1306_EXTERNALVCC) ? 0x10 : 0xCF;
   } else {
     // Other screen varieties -- TBD
   }
@@ -937,7 +944,7 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y,
         }
       }
     } // endif positive height
-  }   // endif x in bounds
+  } // endif x in bounds
 }
 
 /*!
@@ -993,11 +1000,18 @@ void Adafruit_SSD1306::display(void) {
   TRANSACTION_START
   static const uint8_t PROGMEM dlist1[] = {
       SSD1306_PAGEADDR,
-      0,                      // Page start address
-      0xFF,                   // Page end (not really, but works here)
-      SSD1306_COLUMNADDR, 0}; // Column start address
+      0,                   // Page start address
+      0xFF,                // Page end (not really, but works here)
+      SSD1306_COLUMNADDR}; // Column start address
   ssd1306_commandList(dlist1, sizeof(dlist1));
-  ssd1306_command1(WIDTH - 1); // Column end address
+
+  if (WIDTH == 64) {
+    ssd1306_command1(0x20);             // Column start
+    ssd1306_command1(0x20 + WIDTH - 1); // Column end address
+  } else {
+    ssd1306_command1(0);           // Column start
+    ssd1306_command1((WIDTH - 1)); // Column end address
+  }
 
 #if defined(ESP8266)
   // ESP8266 needs a periodic yield() call to avoid watchdog reset.

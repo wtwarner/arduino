@@ -4,7 +4,7 @@
  *  Copyright (C) 2020  Armin Joachimsmeyer
  *  armin.joachimsmeyer@gmail.com
  *
- *  This file is part of IRMP https://github.com/ukw100/IRMP.
+ *  This file is part of IRMP https://github.com/IRMP-org/IRMP.
  *
  *  IRMP is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,22 +13,22 @@
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *  See the GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/gpl.html>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/gpl.html>.
  *
  */
 
 #if defined(ARDUINO)
-#ifndef IRMP_ARDUINO_EXT_H
-#define IRMP_ARDUINO_EXT_H
+#ifndef _IRMP_ARDUINO_EXT_H
+#define _IRMP_ARDUINO_EXT_H
 
 #include <Arduino.h>  // for Print
 
 #include "irmpVersion.h"
-#include "IRFeedbackLed.h" // for redefinition of
+#include "IRFeedbackLED.h" // for redefinition of
 
 #include "digitalWriteFast.h" // we use pinModeFast() and digitalReadFast() and digitalWriteFast() in turn
 
@@ -99,13 +99,13 @@ extern uint_fast8_t irmp_InputPin; // global variable to hold input pin number. 
 #define IRMP_INPUT_PIN              irmp_InputPin
 #else // defined(IRMP_IRSND_ALLOW_DYNAMIC_PINS)
 #  if !defined(IRMP_INPUT_PIN)                                       // Arduino IDE uses IRMP_INPUT_PIN instead of PORT and BIT
-#define IRMP_INPUT_PIN              3
+#define IRMP_INPUT_PIN              2
 #  endif
 #endif
 
 #if defined(IRMP_INPUT_PIN)
 #  if defined(__AVR__)
-#    define input(x)                digitalReadFast(IRMP_INPUT_PIN)
+#    define input(x)                (__builtin_constant_p(IRMP_INPUT_PIN) ) ? digitalReadFast(IRMP_INPUT_PIN) : digitalRead(IRMP_INPUT_PIN)
 #  else
 #    define input(x)                digitalRead(IRMP_INPUT_PIN)
 #  endif
@@ -129,7 +129,8 @@ void irmp_result_print(Print *aSerial, IRMP_DATA *aIRMPDataPtr);
 void irmp_result_print(IRMP_DATA *aIRMPDataPtr);
 
 void irmp_PCI_ISR(void);
-void initPCIInterrupt(void);
+void enablePCIInterrupt(void);
+void disablePCIInterrupt(void);
 
 void irmp_print_active_protocols(Print *aSerial);
 void irmp_print_protocol_name(Print *aSerial, uint8_t aProtocolNumber);
@@ -137,5 +138,5 @@ void irmp_print_protocol_name(Print *aSerial, uint8_t aProtocolNumber);
 extern const uint8_t irmp_used_protocol_index[] PROGMEM;
 extern const char *const irmp_used_protocol_names[] PROGMEM;
 
-#endif // IRMP_ARDUINO_EXT_H
+#endif // _IRMP_ARDUINO_EXT_H
 #endif // ARDUINO

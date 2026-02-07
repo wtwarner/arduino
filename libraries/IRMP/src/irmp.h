@@ -13,7 +13,7 @@
 #ifndef _IRMP_H_
 #define _IRMP_H_
 
-#ifndef IRMP_USE_AS_LIB
+#if !defined(IRMP_USE_AS_LIB)
 #  define IRMPCONFIG_STAGE1_H
 #  include "irmpconfig.h"
 #  undef IRMPCONFIG_STAGE1_H
@@ -21,13 +21,13 @@
 
 #include "irmpsystem.h"
 
-#ifndef IRMP_USE_AS_LIB
+#if !defined(IRMP_USE_AS_LIB)
 #  define IRMPCONFIG_STAGE2_H
 #  include "irmpconfig.h"
 #  undef IRMPCONFIG_STAGE2_H
 #endif
 
-#ifdef ARDUINO
+#if defined(ARDUINO)
 #  include "irmpArduinoExt.h"
 
 #elif defined (__AVR_XMEGA__)
@@ -70,9 +70,18 @@
 #  define IRMP_BIT                              CONCAT(GPIO_Pin_, IRMP_BIT_NUMBER)
 #  define IRMP_PIN                              IRMP_PORT   // for use with input(x) below
 #  define input(x)                              (GPIO_ReadInputDataBit(x, IRMP_BIT))
-#  ifndef USE_STDPERIPH_DRIVER
+#  if !defined(USE_STDPERIPH_DRIVER)
 #    warning The STM32 port of IRMP uses the ST standard peripheral drivers which are not enabled in your build configuration.
 #  endif
+
+#elif defined (ARM_STM32_OPENCM3)
+#  define _CONCAT(a,b)                          a##b
+#  define CONCAT(a,b)                           _CONCAT(a,b)
+#  define IRMP_PORT                             CONCAT(GPIO, IRMP_PORT_LETTER)
+#  define IRMP_PORT_RCC                         CONCAT(RCC_GPIO, IRMP_PORT_LETTER)
+#  define IRMP_BIT                              CONCAT(GPIO, IRMP_BIT_NUMBER)
+#  define IRMP_PIN                              IRMP_PORT   // for use with input(x) below
+#  define input(x)                              (gpio_get(x, IRMP_BIT))
 
 #elif defined (ARM_STM32_HAL)
 #  define IRMP_BIT                              IRMP_BIT_NUMBER
@@ -161,6 +170,13 @@ void irmp_register_complete_callback_function(void (*aCompleteCallbackFunction)(
 
 #if IRMP_SUPPORT_PANASONIC_PROTOCOL == 1 && IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL == 1
 #  warning PANASONIC protocol conflicts wih MITSU_HEAVY, please enable only one of both protocols
+#  warning MITSU_HEAVY protocol disabled
+#  undef IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL
+#  define IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL      0
+#endif
+
+#if IRMP_SUPPORT_KASEIKYO_PROTOCOL == 1 && IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL == 1
+#  warning KASEIKYO protocol conflicts wih MITSU_HEAVY, please enable only one of both protocols
 #  warning MITSU_HEAVY protocol disabled
 #  undef IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL
 #  define IRMP_SUPPORT_MITSU_HEAVY_PROTOCOL      0

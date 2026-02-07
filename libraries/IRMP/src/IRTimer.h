@@ -4,7 +4,7 @@
  *  Copyright (C) 2020  Armin Joachimsmeyer
  *  armin.joachimsmeyer@gmail.com
  *
- *  This file is part of IRMP https://github.com/ukw100/IRMP.
+ *  This file is part of IRMP https://github.com/IRMP-org/IRMP.
  *
  *  IRMP is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,18 +13,18 @@
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *  See the GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/gpl.html>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/gpl.html>.
  *
  */
 
 // NO GUARD here, we have the GUARD below with #ifdef _IRSND_H_ and #ifdef _IRMP_H_.
 
 #if defined(ARDUINO)
-#if ! defined(USE_ONE_TIMER_FOR_IRMP_AND_IRSND) && defined(IRMP_ARDUINO_EXT_H) && defined(IRSND_ARDUINO_EXT_H)
+#if ! defined(USE_ONE_TIMER_FOR_IRMP_AND_IRSND) && defined(_IRMP_ARDUINO_EXT_H) && defined(_IRSND_ARDUINO_EXT_H)
 #error You seem to use receive and send in one sketch but forget to define USE_ONE_TIMER_FOR_IRMP_AND_IRSND before the includes. Unfortunately this cannot be done automatically.
 #endif
 

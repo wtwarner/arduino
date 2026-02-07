@@ -27,7 +27,7 @@
  *  Copyright (C) 2019  Armin Joachimsmeyer
  *  armin.joachimsmeyer@gmail.com
  *
- *  This file is part of IRMP https://github.com/ukw100/IRMP.
+ *  This file is part of IRMP https://github.com/IRMP-org/IRMP.
  *
  *  IRMP is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -36,11 +36,11 @@
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *  See the GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/gpl.html>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/gpl.html>.
  *
  */
 
@@ -53,27 +53,29 @@
 
 #define IRMP_PROTOCOL_NAMES 1 // Enable protocol number mapping to protocol strings - requires some FLASH. Must before #include <irmp*>
 
-#include <irmpSelectMain15Protocols.h>  // This enables 15 main protocols
-//#define IRMP_SUPPORT_NEC_PROTOCOL        1 // this enables only one protocol
+//#include <irmpSelectMain15Protocols.h>  // This enables 15 main protocols
+#define IRMP_SUPPORT_NEC_PROTOCOL        1 // this enables only one protocol
+//#define IRMP_SUPPORT_SIRCS_PROTOCOL      1 // this enables only one protocol
 
-#ifdef ALTERNATIVE_IR_FEEDBACK_LED_PIN
+/*
+ * We use LED_BUILTIN as feedback for commands 0x40 and 0x48 and cannot use it as feedback LED for receiving
+ */
+#if defined(ALTERNATIVE_IR_FEEDBACK_LED_PIN)
 #define IRMP_FEEDBACK_LED_PIN   ALTERNATIVE_IR_FEEDBACK_LED_PIN
 #endif
 /*
  * After setting the definitions we can include the code and compile it.
  */
-#include <irmp.c.h>
+#include <irmp.hpp>
 
 IRMP_DATA irmp_data;
 
 void setup() {
-    pinMode(LED_BUILTIN,OUTPUT);
+    pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217)
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) || defined(SERIAL_USB) /*stm32duino*/|| defined(USBCON) /*STM32_stm32*/ \
+    || defined(SERIALUSB_PID)  || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_attiny3217)
     delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
-#endif
-#if defined(ESP8266)
-    Serial.println(); // to separate it from the internal boot output
 #endif
 
     // Just to know which program is running on my Arduino
@@ -83,15 +85,14 @@ void setup() {
 
     Serial.print(F("Ready to receive IR signals of protocols: "));
     irmp_print_active_protocols(&Serial);
-#if defined(ARDUINO_ARCH_STM32)
-    Serial.println(F("at pin " IRMP_INPUT_PIN_STRING));
-#else
     Serial.println(F("at pin " STR(IRMP_INPUT_PIN)));
-#endif
 
-#ifdef ALTERNATIVE_IR_FEEDBACK_LED_PIN
+    /*
+     * We use LED_BUILTIN as feedback for commands 0x40 and 0x48 and cannot use it as feedback LED for receiving
+     */
+#if defined(ALTERNATIVE_IR_FEEDBACK_LED_PIN)
     irmp_irsnd_LEDFeedback(true); // Enable receive signal feedback at ALTERNATIVE_IR_FEEDBACK_LED_PIN
-    Serial.print(F("IR feedback pin is " STR(ALTERNATIVE_IR_FEEDBACK_LED_PIN)));
+    Serial.println(F("IR feedback pin is " STR(ALTERNATIVE_IR_FEEDBACK_LED_PIN)));
 #endif
 
 }
@@ -109,8 +110,8 @@ void loop() {
              * Here data is available and is no repetition -> evaluate IR command
              */
             switch (irmp_data.command) {
-            case 0x48:
-            case 0x40:
+            case 0x48: // 72
+            case 0x40: // 64
                 digitalWrite(LED_BUILTIN, LOW);
                 delay(4000);
                 break;

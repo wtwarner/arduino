@@ -532,19 +532,17 @@ int HCIClass::leReadPeerResolvableAddress(uint8_t peerAddressType, uint8_t* peer
 #ifdef _BLE_TRACE_
   Serial.print("res: 0x");
   Serial.println(res, HEX);
-#endif
   if(res==0){
     struct __attribute__ ((packed)) Response {
       uint8_t status;
       uint8_t peerResolvableAddress[6];
     } *response = (Response*)_cmdResponse;
-#ifdef _BLE_TRACE_
     Serial.print("Address resolution status: 0x");
     Serial.println(response->status, HEX);
     Serial.print("peer resolvable address: ");
     btct.printBytes(response->peerResolvableAddress,6);
-#endif
   }
+  #endif
   return res;
 }
 
@@ -733,13 +731,13 @@ void HCIClass::handleAclDataPkt(uint8_t /*plen*/, uint8_t pdata[])
     uint16_t dlen; // dlen + 4 = plen (dlen is the size of the ACL SDU)
   } *aclHeader = (HCIACLHdr*)pdata;
 
-  uint8_t bcFlag = (aclHeader->connectionHandleWithFlags & 0xc000) >> 14;
   uint8_t pbFlag = (aclHeader->connectionHandleWithFlags & 0x3000) >> 12;
   uint16_t connectionHandle = aclHeader->connectionHandleWithFlags & 0x0fff;
 
   uint8_t *aclSdu = &pdata[sizeof(HCIACLHdr)];
 
 #ifdef _BLE_TRACE_
+  uint8_t bcFlag = (aclHeader->connectionHandleWithFlags & 0xc000) >> 14;
   Serial.print("Acl packet bcFlag = ");
   Serial.print(bcFlag, BIN);
   Serial.print(" pbFlag = ");

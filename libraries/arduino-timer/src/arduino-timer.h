@@ -35,11 +35,9 @@
 #ifndef _CM_ARDUINO_TIMER_H__
 #define _CM_ARDUINO_TIMER_H__
 
-#if defined(ARDUINO) && ARDUINO >= 100
 #include <Arduino.h>
-#else
-#include <WProgram.h>
-#endif
+
+#include <limits.h>
 
 #ifndef TIMER_MAX_TASKS
     #define TIMER_MAX_TASKS 0x10
@@ -62,14 +60,14 @@ template <
 class Timer {
   public:
 
-    typedef uintptr_t Task; /* public task handle */
+    typedef void * Task; /* public task handle */
     typedef bool (*handler_t)(T opaque); /* task handler func signature */
 
     /* Calls handler with opaque as argument in delay units of time */
     Task
     in(unsigned long delay, handler_t h, T opaque = T())
     {
-        return task_id(add_task(time_func(), delay, h, opaque));
+        return add_task(time_func(), delay, h, opaque);
     }
 
     /* Calls handler with opaque as argument at time */
@@ -77,30 +75,29 @@ class Timer {
     at(unsigned long time, handler_t h, T opaque = T())
     {
         const unsigned long now = time_func();
-        return task_id(add_task(now, time - now, h, opaque));
+        return add_task(now, time - now, h, opaque);
     }
 
     /* Calls handler with opaque as argument every interval units of time */
     Task
     every(unsigned long interval, handler_t h, T opaque = T())
     {
-        return task_id(add_task(time_func(), interval, h, opaque, interval));
+        return add_task(time_func(), interval, h, opaque, interval);
     }
 
     /* Cancel the timer task */
-    void
+    bool
     cancel(Task &task)
     {
-        if (!task) return;
+        struct task * const t = static_cast<struct task * const>(task);
 
-        timer_foreach_task(t) {
-            if (t->handler && (t->id ^ task) == (uintptr_t)t) {
-                remove(t);
-                break;
-            }
+        if (t && (tasks <= t) && (t < tasks + max_tasks) && t->handler) {
+            remove(t);
+            task = static_cast<Task>(NULL);
+            return true;
         }
 
-        task = (Task)NULL;
+        return false;
     }
 
     /* Cancel all timer tasks */
@@ -142,7 +139,7 @@ class Timer {
     unsigned long
     ticks() const
     {
-        unsigned long ticks = (unsigned long)-1, elapsed;
+        unsigned long ticks = ULONG_MAX, elapsed;
         const unsigned long start = time_func();
 
         timer_foreach_const_task(task) {
@@ -162,25 +159,46 @@ class Timer {
 
         elapsed = time_func() - start;
 
-        if (elapsed >= ticks || ticks == (unsigned long)-1) ticks = 0;
+        if (elapsed >= ticks || ticks == ULONG_MAX) ticks = 0;
         else ticks -= elapsed;
 
         return ticks;
     }
 
-    Timer() : ctr(0), tasks{} {}
+    /* Number of active tasks in the timer */
+    size_t
+    size() const
+    {
+        size_t s = 0;
+
+        timer_foreach_const_task(task) {
+            if (task->handler) ++s;
+        }
+
+        return s;
+    }
+
+    /* True if there are no active tasks */
+    bool
+    empty() const
+    {
+        timer_foreach_const_task(task) {
+            if (task->handler) return false;
+        }
+
+        return true;
+    }
+
+    Timer() : tasks{} {}
 
   private:
-
-    size_t ctr;
 
     struct task {
         handler_t handler; /* task handler callback func */
         T opaque; /* argument given to the callback handler */
         unsigned long start,
-                      expires; /* when the task expires */
-        size_t repeat, /* repeat task */
-               id;
+                      expires, /* when the task expires */
+                      repeat; /* repeat task */
     } tasks[max_tasks];
 
     inline
@@ -192,16 +210,6 @@ class Timer {
         task->start = 0;
         task->expires = 0;
         task->repeat = 0;
-        task->id = 0;
-    }
-
-    inline
-    Task
-    task_id(const struct task * const t)
-    {
-        const Task id = (Task)t;
-
-        return id ? id ^ t->id : id;
     }
 
     inline
@@ -224,9 +232,6 @@ class Timer {
 
         if (!slot) return NULL;
 
-        if (++ctr == 0) ++ctr; // overflow
-
-        slot->id = ctr;
         slot->handler = h;
         slot->opaque = opaque;
         slot->start = start;

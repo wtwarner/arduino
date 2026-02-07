@@ -25,15 +25,15 @@
 #define _Adafruit_SSD1306_H_
 
 // ONE of the following three lines must be #defined:
-//#define SSD1306_128_64 ///< DEPRECTAED: old way to specify 128x64 screen
+// #define SSD1306_128_64 ///< DEPRECTAED: old way to specify 128x64 screen
 #define SSD1306_128_32 ///< DEPRECATED: old way to specify 128x32 screen
-//#define SSD1306_96_16  ///< DEPRECATED: old way to specify 96x16 screen
+// #define SSD1306_96_16  ///< DEPRECATED: old way to specify 96x16 screen
 // This establishes the screen dimensions in old Adafruit_SSD1306 sketches
 // (NEW CODE SHOULD IGNORE THIS, USE THE CONSTRUCTORS THAT ACCEPT WIDTH
 // AND HEIGHT ARGUMENTS).
 
 // Uncomment to disable Adafruit splash logo
-//#define SSD1306_NO_SPLASH
+// #define SSD1306_NO_SPLASH
 
 #if defined(ARDUINO_STM32_FEATHER)
 typedef class HardwareSPI SPIClass;
@@ -42,10 +42,6 @@ typedef class HardwareSPI SPIClass;
 #include <Adafruit_GFX.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <AceWire.h>
-using ace_wire::SimpleWireInterface;
-using WireInterface = SimpleWireInterface;
-
 
 #if defined(__AVR__)
 typedef volatile uint8_t PortReg;
@@ -55,6 +51,8 @@ typedef uint8_t PortMask;
 typedef volatile RwReg PortReg;
 typedef uint32_t PortMask;
 #define HAVE_PORTREG
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+#undef HAVE_PORTREG
 #elif (defined(__arm__) || defined(ARDUINO_FEATHER52)) &&                      \
     !defined(ARDUINO_ARCH_MBED) && !defined(ARDUINO_ARCH_RP2040)
 typedef volatile uint32_t PortReg;
@@ -133,7 +131,7 @@ typedef uint32_t PortMask;
 class Adafruit_SSD1306 : public Adafruit_GFX {
 public:
   // NEW CONSTRUCTORS -- recommended for new projects
-  Adafruit_SSD1306(uint8_t w, uint8_t h, WireInterface *twi,
+  Adafruit_SSD1306(uint8_t w, uint8_t h, TwoWire *twi = &Wire,
                    int8_t rst_pin = -1, uint32_t clkDuring = 400000UL,
                    uint32_t clkAfter = 100000UL);
   Adafruit_SSD1306(uint8_t w, uint8_t h, int8_t mosi_pin, int8_t sclk_pin,
@@ -176,7 +174,7 @@ protected:
 
   SPIClass *spi;   ///< Initialized during construction when using SPI. See
                    ///< SPI.cpp, SPI.h
-  WireInterface *wire;   ///< Initialized during construction when using I2C. See
+  TwoWire *wire;   ///< Initialized during construction when using I2C. See
                    ///< Wire.cpp, Wire.h
   uint8_t *buffer; ///< Buffer data used for display buffer. Allocated when
                    ///< begin method is called.

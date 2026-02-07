@@ -12,23 +12,23 @@
  *---------------------------------------------------------------------------------------------------------------------------------------------------
  */
 
-#ifndef IRSND_SELECT_PROTOCOLS_H
-#define IRSND_SELECT_PROTOCOLS_H
+#ifndef _IRSND_SELECT_PROTOCOLS_H
+#define _IRSND_SELECT_PROTOCOLS_H
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------
  * Change settings from 1 to 0 if you want to disable one or more encoders.
- * This saves program space.
+ * This saves program memory.
  * 1 enable  encoder
  * 0 disable encoder
  *---------------------------------------------------------------------------------------------------------------------------------------------------
  */
-// typical protocols, disable here!             Enable  Remarks                 F_INTERRUPTS            Program Space
+// typical protocols, disable here!             Enable  Remarks                 F_INTERRUPTS            program memory
 #define IRSND_SUPPORT_SIRCS_PROTOCOL            1       // Sony SIRCS           >= 10000                 ~200 bytes
 #define IRSND_SUPPORT_NEC_PROTOCOL              1       // NEC + APPLE          >= 10000                 ~100 bytes
 #define IRSND_SUPPORT_SAMSUNG_PROTOCOL          1       // Samsung + Samsung32  >= 10000                 ~300 bytes
 #define IRSND_SUPPORT_KASEIKYO_PROTOCOL         1       // Kaseikyo             >= 10000                 ~300 bytes
 
-// more protocols, enable here!                 Enable  Remarks                 F_INTERRUPTS            Program Space
+// more protocols, enable here!                 Enable  Remarks                 F_INTERRUPTS            program memory
 #define IRSND_SUPPORT_JVC_PROTOCOL              1       // JVC                  >= 10000                 ~150 bytes
 #define IRSND_SUPPORT_NEC16_PROTOCOL            1       // NEC16                >= 10000                 ~150 bytes
 #define IRSND_SUPPORT_NEC42_PROTOCOL            1       // NEC42                >= 10000                 ~150 bytes
@@ -41,7 +41,7 @@
 #define IRSND_SUPPORT_SIEMENS_PROTOCOL          1       // Siemens, Gigaset     >= 15000                 ~150 bytes
 #define IRSND_SUPPORT_NOKIA_PROTOCOL            1       // Nokia                >= 10000                 ~400 bytes
 
-// exotic protocols, enable here!               Enable  Remarks                 F_INTERRUPTS            Program Space
+// exotic protocols, enable here!               Enable  Remarks                 F_INTERRUPTS            program memory
 #define IRSND_SUPPORT_IR60_PROTOCOL             0       // IR60 (SDA2008)       >= 10000                 ~250 bytes // IR frequency 30 kHz
 #define IRSND_SUPPORT_BOSE_PROTOCOL             1       // BOSE                 >= 10000                 ~100 bytes
 #define IRSND_SUPPORT_KATHREIN_PROTOCOL         0       // Kathrein             >= 10000                 DON'T CHANGE, NOT SUPPORTED YET!
@@ -68,7 +68,7 @@
 #define IRSND_SUPPORT_PENTAX_PROTOCOL           1       // Pentax               >= 10000                 ~150 bytes
 #define IRSND_SUPPORT_S100_PROTOCOL             1       // S100                 >= 10000                 ~150 bytes
 #define IRSND_SUPPORT_ACP24_PROTOCOL            1       // ACP24                >= 10000                 ~150 bytes
-#define IRSND_SUPPORT_TECHNICS_PROTOCOL         0       // TECHNICS             >= 10000                 DON'T CHANGE, NOT SUPPORTED YET!
+#define IRSND_SUPPORT_TECHNICS_PROTOCOL         1       // TECHNICS             >= 10000                 ~200 bytes
 #define IRSND_SUPPORT_PANASONIC_PROTOCOL        1       // PANASONIC Beamer     >= 10000                 ~150 bytes
 #define IRSND_SUPPORT_MITSU_HEAVY_PROTOCOL      1       // Mitsubishi-Heavy Aircondition, similar Timing to Panasonic beamer
 #define IRSND_SUPPORT_IRMP16_PROTOCOL           0       // IRMP specific        >= 15000                 ~250 bytes
@@ -82,4 +82,4 @@
 #define IRMP_SUPPORT_RF_X10_PROTOCOL            0       // RF PC X10 (Medion)   >= 15000                 ~250 bytes
 #define IRMP_SUPPORT_RF_MEDION_PROTOCOL         0       // RF PC Medion         >= 15000                 ~250 bytes
 
-#endif // IRSND_SELECT_PROTOCOLS_H
+#endif // _IRSND_SELECT_PROTOCOLS_H

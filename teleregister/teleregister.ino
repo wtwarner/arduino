@@ -1,6 +1,6 @@
 //
 // Teleregister
-// for Arduino Nano (5V)
+// for Arduino Nano clone (5V) Old Bootloader
 
 #include <TimeLib.h>
 #include <Timezone_Generic.h>

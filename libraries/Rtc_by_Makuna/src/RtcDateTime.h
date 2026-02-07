@@ -59,6 +59,116 @@ const uint32_t c_DayAsSeconds = 24 * c_HourAsSeconds;
 const uint32_t c_WeekAsSeconds = 7 * c_DayAsSeconds;
 
 
+// AM PM
+enum RtcMeridiem
+{
+    Rtc_AM,
+    Rtc_PM
+};
+
+// handy conversion class between 24 hour and 12 hour values
+// 
+class RtcHourAmPm
+{
+public:
+    RtcHourAmPm() :
+        _hour(12),
+        _meridiem(Rtc_AM)
+    {
+    }
+
+    // construct from a 24 hour units with validation
+    // if outside bounds, wrap into bounds
+    //
+    RtcHourAmPm(uint8_t hour24)
+    {
+        if (hour24 < 1 || hour24 > 23)
+        {
+            // midnight is 12am
+            _hour = 12;
+            _meridiem = Rtc_AM;
+        }
+        else if (hour24 < 12)
+        {
+            _hour = hour24;
+            _meridiem = Rtc_AM;
+        }
+        else if (hour24 > 12)
+        {
+            _hour = hour24 - 12;
+            _meridiem = Rtc_PM;
+        }
+        else
+        {
+            // noon is 12pm
+            _hour = 12;
+            _meridiem = Rtc_PM;
+        }
+    }
+
+    // construct from 12 hour units and meridiem with validation
+    //
+    RtcHourAmPm(uint8_t hour12, RtcMeridiem meridiem)
+    {
+        // if outside bounds, wrap into bounds
+        if (hour12 < 1)
+        {
+            hour12 = 12;
+        }
+        else if (hour12 > 12)
+        {
+            hour12 = 1;
+            meridiem = (meridiem == Rtc_AM) ? Rtc_PM : Rtc_AM;
+        }
+
+        _hour = hour12;
+        _meridiem = meridiem;
+    }
+
+    // covert to 24 hour units
+    //
+    operator uint8_t() const
+    {
+        uint8_t result = _hour;
+
+        if (result == 12)
+        {
+            if (_meridiem == Rtc_AM)
+            {
+                result = 0;
+            }
+        }
+        else if (_meridiem == Rtc_PM)
+        {
+            result += 12;
+        }
+
+        return result;
+    }
+
+    // properties
+    //
+    uint8_t Hour() const
+    {
+        return _hour;
+    }
+
+    RtcMeridiem Meridiem() const
+    {
+        return _meridiem;
+    }
+
+    uint8_t Hour24() const
+    {
+        return *this;
+    }
+
+protected:
+    uint8_t _hour;
+    RtcMeridiem _meridiem;
+};
+
+
 class RtcDateTime
 {
 public:
@@ -114,6 +224,11 @@ public:
         return _hour;
     }
 
+    RtcHourAmPm HourAmPm() const
+    {
+        return RtcHourAmPm(_hour);
+    }
+
     uint8_t Minute() const
     {
         return _minute;
@@ -141,7 +256,7 @@ public:
     RtcDateTime NextDayOfWeek(uint8_t dayOfWeek) const;
 
     /* 
-    causes mbiguous overload for 'operator+'
+    causes ambiguous overload for 'operator+'
     making explicit doesn't solve it
     // add unsigned seconds
     void operator += (uint32_t seconds)
@@ -165,7 +280,7 @@ public:
     {
         uint32_t totalSeconds = TotalSeconds();
         // never allowed to go before year 2000
-        if (seconds < 0 && abs(seconds) > totalSeconds)
+        if (seconds < 0 && static_cast<uint32_t>(abs(seconds)) > totalSeconds)
         {
             totalSeconds = 0;
         }

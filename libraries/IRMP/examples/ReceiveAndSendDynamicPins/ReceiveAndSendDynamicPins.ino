@@ -10,7 +10,7 @@
  *  Copyright (C) 2019-2020  Armin Joachimsmeyer
  *  armin.joachimsmeyer@gmail.com
  *
- *  This file is part of IRMP https://github.com/ukw100/IRMP.
+ *  This file is part of IRMP https://github.com/IRMP-org/IRMP.
  *
  *  IRMP is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -19,17 +19,17 @@
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *  See the GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/gpl.html>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/gpl.html>.
  *
  */
 
 // ATMEL ATTINY85
-// Piezo speaker must have a 270 Ohm resistor in series for USB programming and running at the Samsung TV.
-// IR LED has a 270 Ohm resistor in series.
+// Piezo speaker must have a 270 ohm resistor in series for USB programming and running at the Samsung TV.
+// IR LED has a 270 ohm resistor in series.
 //                                                    +-\/-+
 //                                   !RESET (5) PB5  1|    |8  Vcc
 // USB+ 3.6V Z-Diode, 1.5kOhm to VCC  Piezo (3) PB3  2|    |7  PB2 (2) TX Debug output
@@ -54,7 +54,7 @@
 
 /*
  * Allow dynamic specification of input and output pins.
- * Requires additional 200 bytes program space.
+ * Requires additional 200 bytes program memory.
  * This must be first, it is used in PinDefinitionsAndMore.h
  */
 #define IRMP_IRSND_ALLOW_DYNAMIC_PINS
@@ -78,8 +78,8 @@
  * After setting the definitions we can include the code and compile it.
  */
 #define USE_ONE_TIMER_FOR_IRMP_AND_IRSND // otherwise we get an error on AVR platform: redefinition of 'void __vector_8()
-#include <irmp.c.h>
-#include <irsnd.c.h>
+#include <irmp.hpp>
+#include <irsnd.hpp>
 
 IRMP_DATA irmp_data;
 uint8_t sIRMPInputPin;
@@ -90,13 +90,10 @@ void IRSendWithDelay(uint16_t aCommand, uint16_t aDelayMillis);
 
 void setup()
 {
-#if defined(MCUSR)
-    MCUSR = 0; // To reset old boot flags for next boot
-#endif
-
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(115200);
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_USB) || defined(SERIAL_PORT_USBVIRTUAL) || defined(ARDUINO_attiny3217)
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) || defined(SERIAL_USB) /*stm32duino*/|| defined(USBCON) /*STM32_stm32*/ \
+    || defined(SERIALUSB_PID)  || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_attiny3217)
     delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
 #endif
 #if defined(ESP8266)
@@ -181,7 +178,11 @@ void loop()
 void IRSendWithDelay(uint16_t aCommand, uint16_t aDelayMillis)
 {
     irsnd_data.command = aCommand;
-    irsnd_send_data(&irsnd_data, true); // true = wait for frame and trailing space to end. This stores timer state and restores it after sending.
+    // true = wait for frame and trailing space/gap to end. This stores timer state and restores it after sending.
+    if (!irsnd_send_data(&irsnd_data, true))
+    {
+        Serial.println(F("Protocol not found")); // name of protocol is printed by irsnd_data_print()
+    }
     irsnd_data_print(&Serial,&irsnd_data);
     delay(aDelayMillis);
 }
@@ -210,7 +211,7 @@ void sendSamsungSmartHubMacro(bool aDoSelect)
 
     if (millis() < tWaitTimeAfterBoot)
     {
-        // division by 1000 and printing requires much (8%) program space
+        // division by 1000 and printing requires much (8%) program memory
         Serial.print(F("It is "));
         Serial.print(millis() / 1000);
         Serial.print(F(" seconds after boot, Samsung H5273 TV requires "));
@@ -250,13 +251,13 @@ void sendSamsungSmartHubMacro(bool aDoSelect)
         delay(2000); // wait additional time for the Menu load
     }
 
-    for (uint8_t i = 0; i < 4; ++i)
+    for (uint_fast8_t i = 0; i < 4; ++i)
     {
         IRSendWithDelay(0x9E61, 250); // Down arrow
     }
 
     IRSendWithDelay(0x9D62, 400); // Right arrow
-    for (uint8_t i = 0; i < 2; ++i)
+    for (uint_fast8_t i = 0; i < 2; ++i)
     {
         IRSendWithDelay(0x9E61, 250); // Down arrow
     }
