@@ -1045,7 +1045,7 @@ SAVE_DAY            LSLB                    ; Shift in a zero for daylight savin
 
 SET_HOUR            EQU     *               ; Once the day is set, display and adjust the hour.
                     LDD     #$023B          ; Special select value to display the hour and suppress
-                    JSR     BACKGROUND      ;  the minutes and indicator lights
+                    JSR     BACKGROUND      ;  the minutes and indicator lights.
                                             ;  return after reading the keyboard
                     LDAB    TIME_OF_DAY     ; Get the current time for possible modification
                                             ;  [bill: represented as units of 10 minutes]
@@ -1059,6 +1059,7 @@ SET_HOUR            EQU     *               ; Once the day is set, display and a
                     SUBB    #6              ; If switch 3 was pressed then decrement the hour
                     BHS     SAVE_HOUR       ; As long as this does not go below zero, save it
                     ADDB    #24*6           ; If it goes below zero then add 24 hours
+                    BRA     SAVE_HOUR       
 
 INC_HOUR            ADDB    #6              ; If switch 2 was pressed then increment the hour
                     CMPB    #24*6           ; Make sure this does not go above 24 hours
@@ -1075,7 +1076,7 @@ SAVE_HOUR           STAB    TIME_OF_DAY     ; Save the modified hour
 SET_TEN_MINUTE      EQU     *               ; Once the hour is set, display and adjust the 
                                             ;  tens of minutes
                     LDD     #$02DB          ; Special select value to display the tens of minutes and
-                    JSR     BACKGROUND      ;  suppress the hours and minutes and indicator lights
+                    JSR     BACKGROUND      ;  suppress the hours and minutes and indicator lights.
                                             ;  return after reading the keyboard
                     LDAB    TIME_OF_DAY     ; Get the current time for possible modification
 DIV_BY_6            SUBB    #6              ; Divide by six and save the remainder to show tens of minutes
@@ -1107,7 +1108,7 @@ ADJ_TENS            ADDA    TIME_OF_DAY     ; [bill: A has delta to full time; B
 ;; PAGE 29 
 SET_MINUTE          EQU     *               ; Once the tens of minutes are set, set the minutes
                     LDD     #$02EB          ; Special select value to display the minutes and suppress
-                    BSR     BACKGROUND      ;  the hours and tens of minutes
+                    BSR     BACKGROUND      ;  the hours and tens of minutes.
                                             ;  return after reading the keyboard
                     LSRA                    ; See if switch 1 has been pressed
                     BCS     SET_ALT         ; If it has then leave the minutes unchanged an go on
@@ -1138,3 +1139,70 @@ HOLD_MINUTE         CLR     TWENTIETHS      ; Clear the lower bits of the time t
                                             ;  where it is
 EXIT_SET            JMP     DISPLAY_MODE    ; On exiting from this mode, return
                                             ;  to normal display mode
+;; PAGE 30
+
+SET_ALT             EQU     *               ; If no change was made to the minutes then display
+                                            ;  and adjust the alternate display mode selection setponit
+                    LDAA    #$A0            ; Special select value to display the alternate mode
+                    BSR     BACKGROUND      ;  selection setpoint.
+                                            ;  return after reading keyboard
+                    LDAB    ALT_SELECT      ; Get the current value of the setpoint just in case
+                    LSRA                    ; See if switch 1 was pressed
+                    BCS     EXIT_SET        ; If it was then leave this mode and return to normal
+                                            ;  display mode
+                    LSRA                    ; See if switch 2 was pressed
+                    BCS     INC_ALT         ; If it was then go to the next select value
+                    LSRA                    ; See if switch 3 was pressed
+                    BCC     SET_ALT         ; If none pressed then stay in this mode
+DEC_ALT             DECB                    ; If switch 3 was pressed then go to the previous value
+                    BSR     VALID_ALT       ; See if this is a valid selection setpoint
+                    BEQ     DEC_ALT         ; If not then go back another one
+                    BRA     SAVE_ALT        ; When a valid one is found, save it
+
+INC_ALT             INCB                    ; If switch 2 was pressed then go to the next value
+                    BSR     VALID_ALT       ; See if this is a valud selection setpoint
+                    BEQ     INC_ALT         ; If not then go forward another one
+SAVE_ALT            STAB    ALT_SELECT      ; Once a valid one is found, save it
+                    BRA     SET_ALT         ; Stay in this mode
+
+VALID_ALT           ANDB    #$0F            ; Clear the upper for bits in case they get set
+                    BEQ     INVALID_ALT     ; A value of zero is invalid, return equal
+                    PSHB                    ; Save the lower 4 bits
+TEST_ALT_BIT        LSRB                    ; Look for the first non-zero bit
+                    BCC     TEST_ALT_BIT    ; Keep shifting until it is found
+                    PULB                    ; At this point, if the rest of the byte is zero then this is
+                                            ;  not a valid selection setpoint, so return equal
+                                            ; If the rest of the byte is not zero then it is
+                                            ;  valid, so return not equal
+INVALID_ALT         RTS
+
+;; PAGE 31
+
+; Diagnostics routine
+
+DIAG_MODE           EQU     *               ; This is a display routine in which various pieces of
+                                            ;  information needed only for diagnostic purposes can
+                                            ;  be accessed.  At present this consists of access to 
+                                            ;  the contents of all the RAM locations.
+                    LDAB    RAM_PTR         ; Load the address of the RAM location to display
+                    ANDB    #$7F            ; Make sure it is pointing to one of the 128 RAM bytes
+                    STAB    RAM_PTR         ; Save the pointer with the MSB clear
+                    LDAA    #$90            ; Special select value to display ram address and contents
+                                            ;  in hex, two digits each
+                    CMPB    #$08            ; At address 0x88, display 8.8.:8.8. and all indicator lights
+                    BNE     NOT_88          ;  turned on
+                    LDD     #$C000          
+NOT_88              BSR     BACKGROUND
+                    LSRA                    ; See if switch 1 was pressed
+                    BCS     EXIT_SET        ; If it was then exit from diagnostic mode
+DIAG_UP_DOWN        LSRA                    ; See if switch 2 was pressed
+                    BCS     INC_DIAG        ; If it was then increment the RAM address
+                    LSRA                    ; See if swtch 3 was pressed
+                    BCC     DIAG_MODE       ; If not then just continue displaying the present
+                                            ;  RAM location
+                    DEC     RAM_PTR         ; If switch 3 was pressed then decrement the pointer and
+                    BRA     DIAG_MODE       ;  display the contents of the new location
+
+INC_DIAG            INC     RAM_PTR         ; If switch 2 was pressed then increment the
+                                            ;  pointer
+                    BRA     DIAG_MODE       ; Display the contents of the new location
