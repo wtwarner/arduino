@@ -1206,3 +1206,195 @@ DIAG_UP_DOWN        LSRA                    ; See if switch 2 was pressed
 INC_DIAG            INC     RAM_PTR         ; If switch 2 was pressed then increment the
                                             ;  pointer
                     BRA     DIAG_MODE       ; Display the contents of the new location
+
+;; PAGE 32 BACKGROUND ROUTINE
+
+; Main background routine
+; At present this routine performs three functions: it formats
+; information to be displayed, using a select code passed to it in
+; the A and B registers; it waits for 1/20 second to elapse and
+; completes a handshake with the foreground routine; and it reads
+; the keyboard and decides which keys have just been pressed.  As
+; long as no more than one key is pressed at a time, it the returns
+; with this keyboard information to the same routine which had
+; called it, but as soon as two keys are pressed simultaneiously it
+; discards the return address and goes instead to one of three 
+; special routines
+
+BACKGROUND          EQU     *
+                    TSTA                    ; First, see if the display mode is one of the special ones
+                    BPL     NOT_SPECIAL     ; If the MSB is not set then standard display mode
+                    LSLA                    ; IF the MSB is set then test the next bit as well
+                    BPL     NOT_CONST       ; if this bit is set then one of the constant patterns
+                                            ;  is to be displayed
+                    LDD     #$FFFF          ; Presently the only constant pattern is the one with
+                    STD     MSD             ;  all segments and lights on
+                    STD     MSD+2
+                    STD     MSD+4
+                    JMP     END_DISP        ; Skip the digit blanking and copying from the temporary
+                                            ;  buffer
+
+;; PAGE 33
+NOT_CONST           LSLA                    ; If the information to be displayed is not constant,
+                    BPL     NOT_DISP_ALT    ;  see if it is alternate select mode
+                    LDD     #C*$100+F       ; If it is then display the characters 'CFHd'
+                    STD     TEMP_BUF
+                    LDD     #H*$100+D
+                    STD     TEMP_BUF+2
+                    LDD     #SET+DEGC+DEGF+AM+PM+DATE+CURR ; Turn on all these indicator lights
+                    STD     TEMP_BUF+4      ;  to show this mode
+                    LDAB    ALT_SELECT      ; See which of these to blank
+                    COMB                    ; Blank those whose select big was zero
+                    LDAA    #$10            ; Shift it up to the upper four bits
+                    MUL
+                    JMP     BLANK_DISP      ; Blank and copy the digits
+
+NOT_DISP_ALT        EQU     *               ; The only other special mode is RAM contents
+                    LDAB    RAM_PTR         ; Format the address first
+                    ORAB    #$80            ; Display its real value, with MSB set
+                    PSHB                    ; Save the address for later
+                    JSR     DISP_HEX        ; Format it as two digit hex
+                    STD     MSD             ; Write it directly to the display buffer
+                    PULB                    ; Get the address again
+                    LDX     #0              ; This time use it to fetch the contents
+                    ABX                     ; Form the complet address in X
+                    LDAB    0,X             ; Load the contents
+                    JSR     DISP_HEX        ; Format it
+                    STD     MSD+2           ; Write it to the display buffer
+                    LDD     #$FFFF-COLON-SET ; Turn on nearly all the indicator lights
+                    STD     MSD+4           ;  in this mode
+                    JMP     END_DISP        ; No need to blank digits or copy to display RAM
+
+;; PAGE 34
+NOT_SPECIAL         PSHB                    ; If none of the special display modes then save
+                    LSRA                    ;  the zone selector and shift out the data type selector
+                    ROR     TEMP_BUF        ; The LSB of the data type selector is saved for later
+                    LSRA                    ;  as the second bit of the data type selector is shifted out
+                    BCS     NOT_TEMP        ;  test it for temperature value vs. time value
+                    JSR     POINTO_TEMP     ; If it is a temperature then get its address (in X)
+                    LDAB    #DEGC           ; Assume that the units are degrees C
+                    LDAA    TEMP_BUF        ; If this is wrong then the sign bit of temp_buf will
+                    BPL     IS_DEGC         ;  be set
+                    LDAB    #DEGF           ; In this case turn on the degree f light instead
+IS_DEGC             STAB    TEMP_BUF+5      ;  write this value into the buffer
+                    CPX     #TODAY_MEAN1 
+                    BLO     NOT_AVG
+                    CPX     #TODAY_MEAN3
+                    BHI     NOT_AVG
+                    JSR     AVERAGE
+                    LDX     #TEMP+2
+                    STD     0,X
+NOT_AVG             JSR     CALC_TEMP       ; Convert to temperature in the desired units
+                    JSR     DISP_FOUR       ; Now convert it to four digits on the stack
+                    INC     TEMP_BUF+2      ; Turn on the decimal point to the right of the
+                                            ;  third digit
+                    PULB                    ; Get back the zone selection bits
+                    JMP     BLANK_DISP      ; Blank digits as needed and copy to RAM
+
+NOT_TEMP            TST     TEMP_BUF        ; If not temperature then see if it is time or date
+                    BPL     DISP_TIME       ; If not date then must be time
+                    TSTA                    ; If date then may be either month/day or year
+                    BEQ     DISP_DATE       ; If no other bits set then it is month/day
+                    LDD     #1984           ; The base year is 1984
+                    ADDB    YEAR            ; Add this to the relative year value
+                    ADCA    #0              ; Carry into the upper byte
+                    JSR     DISP_FOUR       ; Display as a four digit value (should get no blanking)
+                    LDD     #DATE           ; Select the indicator lights to use
+                    STD     TEMP_BUF+4      ; Write them to the buffer
+                    PULB                    ; Get back the zone selection bits
+                    JMP     BLANK_DISP      ; Copy and blank as needed
+
+DISP_DATE           LDAB    MONTH           ; For displaying the date start by formatting
+                    JSR     DISP_TWO        ;  the month as two digits with leading zero blanking
+                    STD     TEMP_BUF        ; Write this out to the first two digits
+                    LDAB    DAY             ; Also format the day as two digits with blanking
+                    LSRB                    ;  shift out the daylight saving flag
+                    JSR     DISP_TWO
+                    LDD     #DATE+CURR      ; Set up the indicator lights
+                    STD     TEMP_BUF+4      ; Write them to the buffer
+                    PULB                    ; Get back the zone selector value
+                    JMP     BLANK_DISP      ; Blank digits if required and copy to RAM
+
+;; PAGE 35
+DISP_TIME           EQU     *
+                    JSR     POINTO_TEMP     ; Get the address of the temperature associated with
+                                            ;  this time
+                    LDAA    2,X             ; Get the time value in A
+                    CLRB                    ; Set the last digit of time to zero
+                    CPX     #CONV_BUF+15    ; See if it is the current time which is needed
+                    BHS     NOT_CUR_TIME    ; If it is then
+                    LDAA    TIME_OF_DAY     ;  substitute the current time of day
+                    LDAB    TENTHS          ;  and the current tenths of minutes, which has the
+                                            ;  units digit of the minutes
+NOT_CUR_TIME        LSRB                    ; Shift the minutes digit to the low four bits
+                    LSRB
+                    LSRB
+                    LSRB
+                    STD     TEMP            ; Save both bytes of the time value
+                    BNE     NOT_2400        ; If both bytes are zero then it is 12:00 midnight
+                    LDAB    PORT1           ; See if we are formatting 24 hour time
+                    BITB    #JUMPER_24      
+                    BEQ     NOT_2400        ; If it is 12:00 midnight and we are in 24 hour time
+                    LDAA    #24*6           ;  then substitute the time 24:00
+NOT_2400            LDAB    #171            ; If it is not midnight or we are in 12 hour time
+                    MUL                     ;  mode then continue by multiplying by 1/6
+                    LSRD                    ; 171 is actually 1024/6 so after we shift down two bits the
+                    LSRD                    ;  whole number part is in A and the fraction is in B
+                    STAB    TEMP            ; Save the fraction part
+                    LDAB    PORT1           ; See if we are in 12 hour or 24 hour time mode
+                    BITB    #JUMPER_24      
+                    BEQ     TWELVE_HOUR     ; If we are in 24 hour mode then
+                    SEC                     ;  set a bit to indicate it
+                    ROL     TEMP+1
+                    LDAB    #ZERO           ; In 24 hour mode don't suppress zeros
+                    BRA     FORM_HOURS      ; /Format the hours digits exactly as they are
+
+TWELVE_HOUR         CMPA    #12             ; In 12 hour mode see if it is AM or PM
+                    BLO     IS_AM           ; If it is PM then
+                    SUBA    #12             ;  shift it down to a value from 0 to 11
+IS_AM               ROL     TEMP+1          ; Save the carry bit to show whether it is AM or PM
+                    ROL     TEMP+1          ; Also save a zero bit to show that it is 12 hour time
+                    TSTA                    ; See if it is zero hours
+                    BNE     NOT_0           ; If it is then
+                    LDAA    #12             ;   make it 12 hours
+NOT_0               CLRB                    ; Assume initially that the tens of hours digit is zero
+FORM_HOURS          SUBA    #10             ; See if it is at least one
+                    BLO     GOT_TENS        ; If not then leave the tens digit blank
+                    LDAB    #ONE            ; Otherwise assume that it is a one
+                    SUBA    #10             ; See if is actually two
+                    BLO     GOT_TENS        ; If not then leave it a one
+                    LDAB    #TWO            ; Otherwise make it a two
+GOT_TENS            STAB    TEMP_BUF        ; Write the tens digit to the buffer
+                    TAB                     ; Copy the negative residual to B
+                    LDX     #DIGIT_TAB+10-256; Point to the lookup table but compensate for
+                    ABX                     ;  the extra ten which was subtracted above
+                    LDAB    0,X             ; Get the bit pattern for the second digit
+                    STAB    TEMP_BUF+1      ; Write the second digit to the buffer
+                    LDAB    TEMP            ; Get the fractional part from above to calcuate the
+
+;; PAGE 36
+                    LDAA    #6              ;  tens of minutes
+                    MUL
+                    TAB                     ; Copy this into B
+                    LDX     DIGIT_TAB       ; Look up the bit pattern for this digit
+                    ABX     
+                    LDAB    0,X
+                    STAB    TEMP_BUF+2      ; Write the third digit to the buffer
+                    LDAB    TEMP+1          ; Get the four bits of the last digit
+                    CLRA                    ; Assume that neither AM or PM will be turned on (24 hour mode)
+                    LSRB                    ; Test the bit which was saved to show this
+                    BCS     DISP_AM_PM      ; If it is set then leave both lights off
+                    LDAA    #AM             ; If it is clear then assume that is is AM
+                    LSRB                    ; The next bit will tell us which it is
+                    BCS     DISP_AM_PM      ; If it is set then leave the AM light on
+                    LDAA    #PM             ; If it is clear then turn on the PM light instead
+DISP_AM_PM          STAA    TEMP_BUF+5      ; Save the second byte of indicator lights
+                    LDX     #DIGIT_TAB      ; Index into the table
+                    ABX
+                    LDAA    0,X             ; Get the digit
+                    LDAB    TEMP_BUF+4      ; Get the first byte of indicator lights
+                    ORAB    #COLON/$100     ; Set the colon to show time display mode
+                    STD     TEMP_BUF+3      ; Write out the fourth digit and the lights
+                    PULB                    ; Get the zone selector value
+
+; Drop directly into the display blanking routine
