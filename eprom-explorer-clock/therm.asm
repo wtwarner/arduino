@@ -804,7 +804,7 @@ INIT_MINMAX         EQU     *
                     STAA    TODAY_MAX1+2
                     STAA    TODAY_MIN2+2
                     STAA    TODAY_MAX2+2
-                    STAA    TODAY_MIN3+3
+                    STAA    TODAY_MIN3+2
                     STAA    TODAY_MAX3+2
                     CLRA                    ; Initialize the highest byte of each sum to zero
                     STAA    TODAY_MEAN1
@@ -1127,7 +1127,13 @@ INC_MINUTE          ADDB    #$10            ; Increment the upper digit of this 
 SKIP_INC            TBA                     ; Copy it into register A to decimal adjust the value
                     DAA
                     ANDA    #$F0            ; Set the tenths of miutes digit to zero
+
                     STAA    TENTHS          ; Save the modified minutes value
+
+; original binary, instead of 'CLR TWENTIETHS':
+; fbb6 86 78  HOLD_MINUTE  LDAA #$78
+; fbb8 97 92               STAA $92 (TWENTIETHS)
+
 HOLD_MINUTE         CLR     TWENTIETHS      ; Clear the lower bits of the time to keep
                                             ;  it set exactly to the minute - also keeps the
                                             ;  colon from flashing in the display
@@ -1364,6 +1370,7 @@ FORM_HOURS          SUBA    #10             ; See if it is at least one
                     SUBA    #10             ; See if is actually two
                     BLO     GOT_TENS        ; If not then leave it a one
                     LDAB    #TWO            ; Otherwise make it a two
+                    SUBA    #10             ; Subtract another ten to match the results for zero and one
 GOT_TENS            STAB    TEMP_BUF        ; Write the tens digit to the buffer
                     TAB                     ; Copy the negative residual to B
                     LDX     #DIGIT_TAB+10-256; Point to the lookup table but compensate for
@@ -1398,3 +1405,416 @@ DISP_AM_PM          STAA    TEMP_BUF+5      ; Save the second byte of indicator 
                     PULB                    ; Get the zone selector value
 
 ; Drop directly into the display blanking routine
+
+;; PAGE 37
+
+; Copy the display data from the temporary buffer to the display
+; buffer while blanking digits as required and blinking the colon
+
+BLANK_DISP          PSHB                    ; Save the zone selector value
+                    LDX     #0              ; Use X as a pointer and counter
+BLANK_NEXT          LDAA    TEMP_BUF,X      ; Load a digit from the temporary buffer
+                    LSLB                    ; See whether this one should be blanked
+                    BCC     NOT_BLANK       ; If the bit is not set then don't blank the digit
+                    CLRA                    ; Otherwise blank it
+NOT_BLANK           STAA    MSD,X           ; Write the digit to the display buffer
+                    INX                     ; point to the next digit
+                    CPX     #4              ; See if all four digits have been copied
+                    BLO     BLANK_NEXT      ; Repeat until all four done
+                    LDAA    TEMP_BUF+4      ; Get the first byte of indicator light bits
+                    LSLB                    ; See if the set light should be turned on
+                    BCC     SET_OFF         ; If not then leave it as is
+                    ORAA    #SET/$100       ; Otherwise turn it on
+SET_OFF             LDAB    TWENTIETHS      ; See if the blinking colon should be on or off
+SUB_20              SUBB    #20             ;  this time - get the present time mod 1 second.
+                    BHS     SUB_20          ;  Keep subtracting 1 second until it goes negative
+                    ADDB    #10             ; Add back 1/2 second
+                    BMI     COLON_ON        ; If we are over 1/2 second into the current second then
+                    ANDA    #$FF-(COLON/$100) ; Turn off the colon (if it was on)
+COLON_ON            PULB                    ; Get back the original zone selector value
+                    ANDB    #ACC0+ACC1      ; Use just the two lowest bits of the byte
+                    LDX     #ZONE_TAB       ; Point to a lookup table for the zone indictor lights
+                    ABX                     ; Index into it
+                    LDAB    TEMP_BUF+5      ; Get the second byte of the indicator bits
+                    ORAB    0,X             ; Or in the zone indicator bits
+                    STD     MSD+4           ; Write both bytes to the display buffer
+
+END_DISP            LDX     #-1             ; Set up a counter to measure processor loading
+INC_LOAD            INX                     ; Increment it once every 9 microseconds
+                    LDAA    ADC_STATE       ; Before continuing, wait for the foreground
+                    BNE     INC_LOAD        ;  task to indicate that 1/20 second has elapsed
+                    LDAA    #3              ; Reset the ADC state to 3 to complete the handshake with
+                    STAA    ADC_STATE       ;  foreground
+                    STX     TEMP_BUF+4      ; Put the loading value in a place where it will not
+                                            ;  get in the way
+                    LDAA    PORT1           ; Read the keyboard
+                    TAB                     ; Make a second copy of the key closures
+                    COMA                    ; Complement one copy so that a bit is set for each key that
+                                            ;  is pressed
+                    ANDA    LAST_KBD        ; And it with the previous reading of the keyboard,
+                                            ;  uncomplemented, so that a bit will now be set only if
+                                            ;  the key is pressed now but was not pressed 1/20 sec ago
+                    STAB    LAST_KBD        ; Save the present key closures to use 1/20 sec from now
+                    COMB                    ; Now also complement this to set the bit if the key is pressed
+                    ANDA    #ACC0+ACC1+ACC2 ; Mask off any other bits in the returned byte
+                    ANDB    #ACC0+ACC1+ACC2 ; Do the same for the current bits
+                    PULX                    ; Take the return address of the stack in case we don't return
+                    CMPB    #ACC0+ACC1      ; See if both switch 1 and switch 2 are being pressed
+                    BNE     NOT_ALT         ;  simultaneiously
+NOT_ALT             JMP     ENTER_ALT       ; If they are then go to alternate display mode
+
+;; PAGE 38
+                    CMPB    #ACC0+ACC2      ; See if both switch 1 and switch 3 are being pressed
+                    BNE     NOT_SET         ;  simultaneously
+                    JMP     SET_MODE        ; If they are then go to time setting mode
+NOT_SET             CMPB    #ACC1+ACC2      ; See if both switch 2 and switch 3 are being pressed
+                    BNE     NOT_DIAG        ;  simultaneously
+                    JMP     DIAG_MODE       ; If they are then go to diagnostic mode
+NOT_DIAG            JMP     0,X             ; If no pairs are being pressed then return to the calling
+                                            ;  routine
+
+ZONE_TAB            DC      ZONE1           ; Indicator light for zone 1
+                    DC      ZONE2           ; Indicator light for zone 2
+                    DC      ZONE3           ; Indicator light for zone 3
+                    DC      0               ; Special value to suppress zone indicator lights
+
+;; PAGE 39
+; Subroutine to find the address of a temperature value from the
+; type indicator in A and the zone number in B.
+; Returns the address in X and the indicator light bits in
+; TEMP_BUF+4
+
+POINTO_TEMP         PSHB                    ; Set aside the zone number for now
+                    TAB                     ; See what type of temp is desired
+                    LDX     TEMP_TAB        ; Index into a table of temperature addresses and
+                    ABX                     ;  indicator light bits. X + 3*B
+                    LSLB
+                    ABX                    
+                    LDAA    2,X             ; Get the indicator light bits first
+                    STAA    TEMP_BUF+4      ; Save them in RAM
+                    LDX     0,X             ; Load the address from the table, whic his the address of
+                                            ;  the temperature value for zone 1
+                    PULB                    ; Get the zone number again
+                    ANDB    #ACC0+ACC1      ; Look at just the zone selector bits
+                    ABX                     ; Add three times the zone number to select the value for the
+                    LSLB                    ;  specific zone
+                    ABX
+                    RTS                     ; Return
+
+; Subroutine to calculate the temperature in tenths of a degree,
+; either C or F, from the A/D values
+; Enter with the address of the A/D value in X and a flag to select
+; degrees C or F in the sign bit of TEMP_BUF
+; Returns the temperature in A and B
+
+CALC_TEMP           EQU     *
+                    LDD     CONV_BUF+12     ; Calculate the difference between the high reference
+                    SUBD    CONV_BUF+9      ;  and the low reference - this is 100C or 180F
+                    LSLD                    ; We will be dividing twice this value into half of the other
+                                            ;  value so the useable temperature range is 400c or 720f
+                    STD     TEMP            ; Set this aside as our divisor
+                    LSRD                    ; Now calculate the difference between the high reference and
+                    ADDD    CONV_BUF+12     ;  the temperature conversion value, but offset it
+                                            ;  upward by 100c or 180f to make sure it is positive
+                    SUBD    0,X             ; We will sutract the offset out later
+                    LSRD                    ; Divide by two to give sufficient range
+                    LDX     #16             ; Initialize a counter to generate a 16-bit quotient
+TEMP_LOOP           SUBD    TEMP            ; Perform a trial subtraction of the divisor
+                    BHS     IS_POSITIVE     ; If the remainder is still positive then leave it
+                    ADDD    TEMP            ; Otherwise add the divisor back in
+IS_POSITIVE         ROL     TEMP+3          ; Shift the next bit of the quotient from the carry bit
+                    ROL     TEMP+2          ;  and shift the entire quotient up one bit
+                    LSLD                    ; Double the remainder
+                    DEX                     ; Decrement the counter
+                    BNE     TEMP_LOOP       ; Repeat for 16 bits of quotient
+                    LDAB    TEMP+3          ; Get the low byte of the quotient
+                    COMB                    ; Correct for the bit inversion in the above divide
+                    LDAA    TEMP_BUF        ; See if we want degrees C or F
+                    BPL     CALC_C          ; If it is C then use a different version of the scaling
+                    LDAA    #180*10/8       ; For degrees F the scaling factor is 1800 tenths of 
+                    MUL                     ;  a degree - any powers of two will be removed by shifting
+                    
+;; PAGE 40
+                    ADDA    #2              ; Round up 1/20 degree
+                    STAA    TEMP            ; This is part of the second byte of the final result
+                    LDAA    TEMP+2          ; Get the high byte of the quotient
+                    COMA                    ; Again correct for the bit inversion
+                    LDAB    #180*10/8       ; Scale this in the same way
+                    MUL
+                    ADDB    TEMP            ; Combine the two parts of the lower byte of the result
+                    ADCA    #0              ; Carry into the upper byte
+                    LSRD                    ; Shift down two bits to get the correct scaling
+                    LSRD
+                    SUBD    #(180-32)*10    ; This cancels the extra 180 degrees which were
+                                            ;  added in to make the values positive and corrects to 32 degrees
+                                            ;  as the freezing point of water in Fahrenheit
+                    RTS
+
+CALC_C              LDAA    #100*10/8       ; For degrees C the scaling factor is 1000 tenths
+                    MUL                     ;  of a degree
+                    ADDA    #2              ; Round up 1/20 degree
+                    STAA    TEMP            ; Save part of the low byte of the result
+                    LDAA    TEMP+2          ; Get the high byte of the quotient
+                    COMA                    ; Correct for bit inversion
+                    LDAB    #100*10/8       ; Scale it
+                    MUL
+                    ADDB    TEMP            ; Finish calculating the low byte
+                    ADCA    #0              ; And the high byte
+                    LSRD                    ; Shift down two bits to get final scaling
+                    LSRD
+                    SUBD    #100*10         ; Cancel the extra 100 degrees
+                    RTS                     ; Return the value
+
+;; PAGE 41
+
+; Lookup tables of temperature value addresses and indicator bit
+; values
+
+TEMP_TAB            DC.W    CONV_BUF        ; Current temperature
+                    DC.B    CURR/$100
+                    DC.W    TODAY_MAX1      ; Today's high
+                    DC.B    (TODAY+HIGH)/$100
+                    DC.W    TODAY_MIN1      ; Today's low
+                    DC.B    (TODAY+LOW)/$100
+                    DC.W    TODAY_MEAN1     ; Today's mean
+                    DC.B    (TODAY+MEAN)/$100
+                    DC.W    LAST_MAX1       ; Yesterday's high
+                    DC.B    (YEST+HIGH)/$100
+                    DC.W    LAST_MIN1       ; Yesterday's low
+                    DC.B    (YEST+LOW)/$100
+                    DC.W    LAST_MEAN1      ; Yesterday's mean
+                    DC.B    (YEST+MEAN)/$100
+
+;; PAGE 42
+
+; Formatting routines
+
+; What follows is a variety of formatting routines for various
+; combinations of input and output information.  The output information
+; is always a compbination of displayable digits returned in 
+; TEMP_BUF through TEMP_BUF+3
+
+; Subroutine to display a two digit value from 0 to 99, with zero 
+; suppression on the first digit
+
+DISP_TWO            EQU     *               ; The value to be formatted is passed in B
+                    LDAA    #205            ; The first objective is to multiple by 1/10 and separate
+                    MUL                     ;  the whole number and fraction parts of the result
+                    LSRD                    ; Since the value 205 is about eight times 256/10, shift the
+                    LSRD                    ;  answer down 3 bits and whole number will be in A and
+                    LSRD                    ;  the fraction in B
+                    PSHB                    ; Save the fraction temporarily on the stack
+                    TAB                     ; Copy the whole number into B
+                    BEQ     SUPP_TWO        ; If the whole number part is zero, supress it
+END_TWO             LDX     #DIGIT_TAB      ; If it is not zero then index into a lookup
+                    ABX                     ;  table to get the bits for this digit
+                    LDAA    0,X
+SUPP_TWO            PULB                    ; Get the fraction back off the stack
+                    STAA    TEMP_BUF+2      ; Save the first digit in the buffer
+                    LDAA    #10             ; Now multiply the fraction by ten to get the second digit
+                    MUL
+                    ADCA    #0              ; Round up to prevent truncation errors
+                    TAB                     ; Copy the digit into B
+                    LDX     #DIGIT_TAB      ; Also index into the table
+                    ABX                     ; Do not do zero supression since this is the last digit
+                    LDAB    0,X             ; Get the segments bits
+                    STAB    TEMP_BUF+3      ; Save the second digit in the buffer
+                    LDAA    TEMP_BUF+2      ; Return both digita in registers as well in case
+                    RTS                     ;  the calling routine wants to write them into another location
+
+;; PAGE 43
+
+; Subroutine to display a four digit vlaue from -999 to 2999, with
+; zero suppression on the first two digits
+
+DISP_FOUR           EQU     *               ; The value to be formatted is pass in A and B
+                    STD     TEMP            ; Save the unmodified vlue to be formatted
+                    BPL     PLUS_FOUR       ; Test the sign at the same time
+                    LDAA    #SEGG           ; If the value is negative, then maket he first digit '-'
+                    STAA    TEMP_BUF        ; Write this character into the first digit in the buffer
+                    CLRA                    ; Now negate the negative value to give a positive number
+                    CLRB                    ;  to be formatted
+                    SUBD    TEMP            
+                    BRA     CONTIN_FOUR     ; Skip ahead to the second digit formatting
+PLUS_FOUR           SUBD    #1000           ; If the value is positive, see if it is more
+                    BHS     ONE_THOUSAND    ;  than 999
+                    CLRA                    ; If not then make the first digit blank
+                    BRA     SAVE_FIRST      ; Push it onto the stack and continue from there
+
+ONE_THOUSAND        STD     TEMP            ; If the value is more than 999 then save the
+                                            ;  value less than one thousand
+                    SUBD    #1000           ; See if the remainder is still more then 999
+                    BHS     TWO_THOUSAND    ; If it is then the first digit is assumed to be 2
+                    LDAA    #ONE            ; But if not then make the first digit 1
+                    BRA     SAVE_FIRST      ; Push it on the stack and continue from there
+
+TWO_THOUSAND        STD     TEMP            ; If the value is more than 1999 the save
+                                            ;  the value less two thousand
+                    LDAA    #TWO            ; Make the first digit 2
+SAVE_FIRST          STAA    TEMP_BUF        ; Save it in the buffer
+                    LDD     TEMP            ; Get the value mod 1000
+CONTIN_FOUR         EQU     *
+                    LDX     #DIGIT_TAB-1    ; Point to the table of digit patterns
+                    INX                     ; Keep incrementing into this table and subtracting 100 from
+SUB_100             SUBD    #100            ;  the value until it goes negative
+                    BHS     SUB_100         ; As soon as it goes negative we are pointing to the digit
+                                            ;  to be displayed
+                    ADDB    #100            ; Cancel the extra subtraction
+                    LDAA    0,X             ; Load the second digit from the lookup table
+                    CMPA    #ZERO           ; See if the second digit is a zero
+                    BNE     SEC_NOT_ZERO    ; If second digit is zero then should it be blanked
+                    LDAA    TEMP_BUF        ; Look at the first digit
+                    BEQ     BLANK_SECOND    ; If first digit is blank then blank second
+                    SUBA    #SEGG           ; Also, if the first digit is '-' then blank second
+                    BEQ     BLANK_SECOND
+                    LDAA    #ZERO           ; Otherwise put an actual zero that digit
+BLANK_SECOND        EQU     *               ; Either a zero or a blank will be pushed next
+SEC_NOT_ZERO        STAA    TEMP_BUF+1      ; Save the second digit, whatever it is
+                    LDAA    #205            ; Duplicate the first part of the routine above for
+                    MUL                     ;  formatting a two digit number, so that we can enter that
+                    LSRD                    ;  routine and format the last two digita without allowing
+                    LSRD                    ;  the first digit to be blanked
+                    LSRD
+                    PSHB
+                    TAB
+                    BRA     END_TWO         ; Now jump into the two digit formatter
+
+;; PAGE 44
+
+; Subroutine to display a two digit hex value
+DISP_HEX            TBA                     ; Make a duplicate copy of the value to be displayed
+                    LSRB                    ; Isolate the top four bits of the copy in B
+                    LSRB
+                    LSRB    
+                    LSRB
+                    LDX     #DIGIT_TAB      ; Point to the lookup table of both decimal and hex
+                    ABX                     ;  bit patterns and index into it
+                    TAB                     ; Copy the original value back into B
+                    LDAA    0,X             ; Get the pattern for the first digit in A
+                    ANDB    #$0F            ; Isolate the bottom four bits this time
+                    LDX     #DIGIT_TAB      ; Again index into the table
+                    ABX     
+                    LDAB    0,X             ; Now we have the bit apttern for the second digit
+                    RTS                     ; Return with both digit patterns in registers
+
+;; PAGE 45
+
+; Lookup table of bit patterns for each digit
+DIGIT_TAB           DC      ZERO, ONE, TWO, THREE, FOUR
+                    DC      FIVE, SIX, SEVEN, EIGHT, NINE
+                    DC      A,B,C,D,E,F
+
+;; PAGE 46
+
+; Restart and initialization
+
+; When power is first turned on and the processor starts running 
+; there are cetain things which must be done before the instrument
+; can be allowed to operate normally.  This incluides setting up the
+; hardware to the desired mode of operation, initializing the
+; contents of memory to a konwn state, performing certain tests on
+; the hardware, allowing the A/D circuitry to settle and putting
+; meaningful values in for the minimum, maximum, and mean
+; temperatures
+
+RESTART             EQU     *               ; The pointer in the vector table causes executeion to
+                                            ;  begin at this point after a reset
+                    CLRA                    ; Begin by setting up the internal hardware
+                    STAA    $00             ; Make all 8 bits of port1 into inputs
+                    COMA   
+                    STAA    $04             ; Make all 16 bits of ports 3 and 4 into outputs
+                    STAA    $05
+                    STAA    SER_MODE_REG    ; Set the serial port up for external clock
+                    LDAA    #$12            ; Make some of the bits in port 2 inputs and some outputs
+                    STAA    $01             ; Bits 0, 2, and 3 are inputs, bits 1 and 4 are outputs
+                    LDAA    #TIMER_EOCI     ; Set the bit to allow output compare interrupts
+                    STAA    TIMER_CONTROL
+
+                    LDX     #$80            ; Initialize the contents of all 128 bytes of internal RAM
+CLEAR_RAM           CLR     $7F,X           ;  to zero
+                    DEX
+                    BNE     CLEAR_RAM
+                    LDAA    #1              ; Set the month to 1
+                    STAA    MONTH
+                    STAA    A_D_SELECT      ; Also set the A/D converter to select channel 1
+                    INCA                    ; Set the day to 2
+                    STAA    DAY
+                    LDAA    #$0F            ; Set the alternate display mode selection value to
+                    STAA    ALT_SELECT      ;  select all four display modes
+                    LDD     #$FFFF          ; Finally, initialize the display memory to turn on all
+                    STD     MSD             ;  eight segments of all six digits for the first few
+                    STD     MSD+2           ; seconds as a means of testing all of that hardware
+                    STD     MSD+4
+
+                    LDS     #$FF            ; Initialize the stack pointer to point at the very last
+                                            ;  RAM location - the stack will occupy the section
+                                            ;  from here down to hopefully just short of the 
+                                            ;  last RAM location used for other purposes
+
+                    CLI                     ; Here we Go!!!
+                                            ; Since the only interrupt enabled in the system is the
+                                            ;  output compare interrupt, as soon as the main interrupt
+                                            ;  enable bit is cleared (it is actually an interrupt 
+                                            ;  inhibit) we can begin to get output compare interrupts
+
+;; PAGE 47
+
+; Wait several seconds while things settle down
+                    LDD     #$300+40        ; Load register A with a 3 and register B with a 40
+                                            ; The 3 will be used to communicate with the foreground
+                                            ;  task and the 40 will allow us to delay for two
+                                            ;  seconds (40 twentieths)
+WAIT_ZERO           TST     ADC_STATE       ; Each time a twentieth of a second has elapsed, this
+                    BNE     WAIT_ZERO       ;  state counter will be decremented to zero - until then
+                                            ;  just remain in this loop waiting
+                    STAA    ADC_STATE       ; The background task must now complete a handshake
+                                            ;  with the foreground task to let it know that it has
+                                            ;  seen the indication of the completion of a twentieth
+                                            ;  of a second and is ready to go on the the next twentieth
+                    DECB                    ; After the end of each twentieth, decrement the counter in
+                    BNE     WAIT_ZERO       ;  register B to see if two seconds have passed yet
+
+;; PAGE 48
+; Now that the adc has been running for a few seconds, all of the 
+; voltage levels should have settled down and the individual
+; measurements should all be valid, but since the value which is saved
+; internally is a running average of a large number of 
+; measurements it could take a long time before this filtered value
+; is reasonably close to the actual answer. To avoid this, it is
+; necessary that we initialize the five filtered values to something
+; appropriate. The way we do that is to reset the filtered value
+; to zero, take one more measurement on each of the five channels,
+; which will result in a filtered value which is one fourth 
+; of this single reading, then multiply this value by four 
+; and put it back
+
+                    LDX     #15             ; The conversion buffer is 15 bytes long
+CLEAR_BUF           CLR     CONV_BUF-1,X    ; clear the buffer starting with the last byte
+                    DEX                     ; Decrement the combined counter and pointer
+                    BNE     CLEAR_BUF       ; Repeat until all 15 bytes are zero
+
+; Note that because of the synchronization we achieved above with
+; the foreground task there is no danger of not finishing the
+; clearing of the buffer before the completion of the next
+; measurement.
+
+                    LDAB    #5              ; Set up register B as a counter to count out five more
+                                            ;  conversions - register A still contains a three
+LOOP_TST            TST     ADC_STATE       ; Once again, wait for foreground to complete a
+                    BNE     LOOP_TST        ;  twentieth of a second
+                    STAA    ADC_STATE       ; Complete the handshake
+                    DECB                    ; Do this five times
+                    BNE     LOOP_TST
+
+                    LDX     #15             ; Use X as a combined counter and pointer while multiplying
+                                            ;  each of the values in the buffer by 4
+INIT_CONV_BUF       LDD     CONV_BUF-3,X    ; Get a value from the buffer
+                    LSLD                    ; Shift it left two bits
+                    LSLD
+                    STD     CONV_BUF-3,X    ; The last two bits will all be zero, but their
+                                            ;  significance is very small
+                    DEX                     ; Back up to the previous location in the buffer
+                    DEX
+                    DEX
+                    BNE     INIT_CONV_BUF   ; Repeat until all five filtered values have been
+                                            ;  initialized
