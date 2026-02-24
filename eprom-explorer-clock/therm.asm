@@ -105,8 +105,8 @@ EIGHT               EQU     SEGA+SEGB+SEGC+SEGD+SEGE+SEGF+SEGG ; DIGIT 8
 NINE                EQU     SEGA+SEGB+SEGC+SEGD+SEGF+SEGG   ; DIGIT 9
 
 ;;; PAGE 3 RAM ASSIGNMENTS
-    SEG.U                               ; RAM 128 BYTES
-    ORG                 $80
+                    SEG.U                                   ; RAM 128 BYTES
+                    ORG     $80
 
 RAM_PTR             DS      1
 LINE_PHASE          DS      1
@@ -1818,3 +1818,43 @@ INIT_CONV_BUF       LDD     CONV_BUF-3,X    ; Get a value from the buffer
                     DEX
                     BNE     INIT_CONV_BUF   ; Repeat until all five filtered values have been
                                             ;  initialized
+;; PAGE 49
+
+; The final initialization task to be performed is setting the
+; contents of the various minimum, maximum, and mean values
+                    JSR     INIT_MINMAX     ; Initialize today's minimum, maximum, and mean 
+                                            ;  values and set the mean value counter to 1
+                    LDX     #3*3*2          ; Arbitrarly set yesterdays min and
+                                            ;  max to the same value
+INIT_LAST           LDAA    TODAY_MIN1-1,X
+                    STAA    LAST_MIN1-1,X
+                    DEX
+                    BNE     INIT_LAST
+                    LDD     TODAY_MIN1      ; Also set yesterday's average to this value
+                    STD     LAST_MEAN1
+                    LDD     TODAY_MIN2
+                    STD     LAST_MEAN2
+                    LDD     TODAY_MIN3
+                    STD     LAST_MEAN3
+
+; This completes the initialization process - all that remains is
+; to begin executing the normal background routines
+                    JMP     DISPLAY_MODE    ; Come up in normal display mode
+
+; Freerun on NMI
+NMI_INT             DC.B    $5E             ; execute instruction to cycle address counter
+                                            ;  through memory for signature analysis
+                    BRA     *               ; If that doesn't work than just die here
+
+;; PAGE 50
+
+; Vectors
+                    ORG     $FFF0
+                    DC.W    IRQ_EXIT        ; Serial port
+                    DC.W    IRQ_EXIT        ; Timer overflow
+                    DC.W    TIMER_INT       ; Timer output compare
+                    DC.W    IRQ_EXIT        ; Timer input capture
+                    DC.W    IRQ_EXIT        ; External interrupt not used
+                    DC.W    IRQ_EXIT        ; External interrupt not used
+                    DC.W    NMI_INT         ; Non-maskable interrupt go to signature analysis
+                    DC.W    RESTART         ; Startup routine
