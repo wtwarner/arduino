@@ -91,7 +91,7 @@ I                   EQU     SEGB+SEGC                       ; LETTER I
 L                   EQU     SEGD+SEGE+SEGF                  ; LETTER L
 O                   EQU     SEGA+SEGB+SEGC+SEGD+SEGE+SEGF   ; LETTER O
 P                   EQU     SEGA+SEGB+SEGE+SEGF+SEGG        ; LETTER P
-S                   EQU     SEGB+SEGC+SEGD+SEGF+SEGG        ; LETTER S
+S                   EQU     SEGA+SEGC+SEGD+SEGF+SEGG        ; LETTER S
 U                   EQU     SEGB+SEGC+SEGD+SEGE+SEGF        ; LETTER U
 ZERO                EQU     O                               ; DIGIT 0
 ONE                 EQU     I                               ; DIGIT 1
@@ -1055,7 +1055,7 @@ SET_HOUR            EQU     *               ; Once the day is set, display and a
                     LSRA                    ; See if switch 2 was pressed
                     BCS     INC_HOUR        ; If it was then increment the hour
                     LSRA                    ; See if switch 2 was pressed
-                    BCS     SET_HOUR        ; If none pressed, stay in this mode
+                    BCC     SET_HOUR        ; If none pressed, stay in this mode
                     SUBB    #6              ; If switch 3 was pressed then decrement the hour
                     BHS     SAVE_HOUR       ; As long as this does not go below zero, save it
                     ADDB    #24*6           ; If it goes below zero then add 24 hours
@@ -1134,8 +1134,12 @@ SKIP_INC            TBA                     ; Copy it into register A to decimal
 ; fbb6 86 78  HOLD_MINUTE  LDAA #$78
 ; fbb8 97 92               STAA $92 (TWENTIETHS)
 
-HOLD_MINUTE         CLR     TWENTIETHS      ; Clear the lower bits of the time to keep
-                                            ;  it set exactly to the minute - also keeps the
+HOLD_MINUTE         LDAA #$78
+                    STAA TWENTIETHS
+
+; June 1984 listing:
+; HOLD_MINUTE         CLR     TWENTIETHS      ; Clear the lower bits of the time to keep
+;                                             ;  it set exactly to the minute - also keeps the
                                             ;  colon from flashing in the display
                     LDD     #$02EB          ; Special select value to display the minutes and suppress
                     BSR     BACKGROUND      ;  the hours and tens of minutes
@@ -1381,9 +1385,11 @@ GOT_TENS            STAB    TEMP_BUF        ; Write the tens digit to the buffer
 
 ;; PAGE 36
                     LDAA    #6              ;  tens of minutes
+; original has INCB, June 1984 does not
+                    INCB
                     MUL
                     TAB                     ; Copy this into B
-                    LDX     DIGIT_TAB       ; Look up the bit pattern for this digit
+                    LDX     #DIGIT_TAB      ; Look up the bit pattern for this digit
                     ABX     
                     LDAB    0,X
                     STAB    TEMP_BUF+2      ; Write the third digit to the buffer
@@ -1461,10 +1467,10 @@ INC_LOAD            INX                     ; Increment it once every 9 microsec
                     PULX                    ; Take the return address of the stack in case we don't return
                     CMPB    #ACC0+ACC1      ; See if both switch 1 and switch 2 are being pressed
                     BNE     NOT_ALT         ;  simultaneiously
-NOT_ALT             JMP     ENTER_ALT       ; If they are then go to alternate display mode
+                    JMP     ENTER_ALT       ; If they are then go to alternate display mode
 
 ;; PAGE 38
-                    CMPB    #ACC0+ACC2      ; See if both switch 1 and switch 3 are being pressed
+NOT_ALT             CMPB    #ACC0+ACC2      ; See if both switch 1 and switch 3 are being pressed
                     BNE     NOT_SET         ;  simultaneously
                     JMP     SET_MODE        ; If they are then go to time setting mode
 NOT_SET             CMPB    #ACC1+ACC2      ; See if both switch 2 and switch 3 are being pressed
@@ -1486,7 +1492,7 @@ ZONE_TAB            DC      ZONE1           ; Indicator light for zone 1
 
 POINTO_TEMP         PSHB                    ; Set aside the zone number for now
                     TAB                     ; See what type of temp is desired
-                    LDX     TEMP_TAB        ; Index into a table of temperature addresses and
+                    LDX     #TEMP_TAB       ; Index into a table of temperature addresses and
                     ABX                     ;  indicator light bits. X + 3*B
                     LSLB
                     ABX                    
@@ -1655,8 +1661,8 @@ SAVE_FIRST          STAA    TEMP_BUF        ; Save it in the buffer
                     LDD     TEMP            ; Get the value mod 1000
 CONTIN_FOUR         EQU     *
                     LDX     #DIGIT_TAB-1    ; Point to the table of digit patterns
-                    INX                     ; Keep incrementing into this table and subtracting 100 from
-SUB_100             SUBD    #100            ;  the value until it goes negative
+SUB_100             INX                     ; Keep incrementing into this table and subtracting 100 from
+                    SUBD    #100            ;  the value until it goes negative
                     BHS     SUB_100         ; As soon as it goes negative we are pointing to the digit
                                             ;  to be displayed
                     ADDB    #100            ; Cancel the extra subtraction
