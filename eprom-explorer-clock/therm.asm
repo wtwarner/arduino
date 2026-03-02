@@ -2,7 +2,7 @@
 ; sponsored by Hewlett-Packard, Avondale, PA.
 
 ; Copied from paper listing dated Thu, Jun 14, 1984
-; code notes:
+; Code updates for 'dasm' assembler:
 ; - original used ' in names; this copy uses _; for example RCV'DATA vs. RCV_DATA.
 ; - original used STAD, LDAD mnemonics; this uses STD, LDD
 ;
@@ -10,6 +10,10 @@
 ; to be implemented yet:
 ; - serial communication
 ; - alarms (nothing on schematic using these pins)
+;
+; March 1, 2026 updates:
+; - fix daylight saving time to be 2nd week of March, 1st week of
+; - reset year to 2026 and Alternate Display set to F+T 
 
                     processor           6803
 ;;; PAGE 1 HARDWARE DEFINITIONS
@@ -546,7 +550,7 @@ NO_CARRY3           INC     MEAN_COUNT      ; Increment the counter to show that
                     LDAA    TIME_OF_DAY     ; Now increment the time-of-day counter by ten minutes
                     INCA
                     CMPA    #6*24           ; See if it is midnight
-                    BHS     MIDNIGHT        ; If it isi then take care of any daily chores
+                    BHS     MIDNIGHT        ; If it is then take care of any daily chores
                     STAA    TIME_OF_DAY     ; Otherwise save the incremented time
                     CMPA    #6*2            ; Now see if it is 2AM
                     BNE     IRET            ; If not then we are done for now
@@ -554,37 +558,40 @@ NO_CARRY3           INC     MEAN_COUNT      ; Increment the counter to show that
                     BITA    #DST_JUMPER     ;  adjust for daylight saving time
                     BNE     IRET            ; If the jumper has been removed then daylight saving time is
                                             ;  disabled.
-                    LDAA    MONTH           ; Next see if it is April or October
-                    CMPA    #10             ; October is month number 10
-                    BEQ     OCTOBER         ; If it is October then check for return to standard time
-                    CMPA    #4              ; Otherwise see if it is April
-                    BNE     IRET            ; If it is not April either there is nothing more to do
+                    LDAA    MONTH           ; Next see if it is March or November
+                    CMPA    #11             ; November is month number 11
+                    BEQ     NOVEMBER        ; If it is November then check for return to standard time
+                    CMPA    #3              ; Otherwise see if it is March
+                    BNE     IRET            ; If it is not March either there is nothing more to do
                     LDAA    DAY             ; Now see what day of the month it is
                     LSRA                    ; Shift out the daylight savings flag
-                    SUBA    #24             ; See if this is last week in April
-                    BLO     IRET            ; If not then skip it
-; Note - April 24 1984 was a Tuesday
-                    ADDA    #2              ; Add 2 to get the day of week this would have been in 1984
+                    SUBA    #8              ; See if second week in March
+                    BLT     IRET            ; If below then skip it
+                    CMPA    #8              ; See if above second seek
+                    BGE     IRET            ; If so then skip it
+; Note - March 8 1984 was a Thursday
+                    ADDA    #4              ; Add 4 to get the day of week this would have been in 1984
                     BSR     DAY_OF_WEEK     ; Now find out what day of the week it is this year
                     BNE     IRET            ; If it is not Sunday (for which zero is returned), skip it
-                    LDAA    TIME_OF_DAY     ; Only if this is the last Sunday in April do we
+                    LDAA    TIME_OF_DAY     ; Only if this is the second Sunday in March do we
                     ADDA    #6              ;  add one hour to the time
                     STAA    TIME_OF_DAY
                     RTI
 
 ;; PAGE 15
 
-OCTOBER             LDAA    DAY             ; If this is October then see what the date is
+NOVEMBER            LDAA    DAY             ; If this is November then see what the date is
                     LSRA                    ; Shift out the daylight saving flag
                     BCS     IRET            ; If this bit is set then we have already adjusted then time
                                             ;  back to standard time
-                    SUBA    #25             ; Otherwise see if this is the last week in October
-                    BLO     IRET            ; If not then skip it
-; Note - October 25 1984 was a Thursday
+                    SUBA    #1              ; Otherwise see if this is the first week in November
+                    CMPA    #7              ; 
+                    BHI     IRET            ; If not then skip it
+; Note - November 1 1984 was a Thursday
                     ADDA    #4              ; Add 4 to get the day of week this would have been in 1984
                     BSR     DAY_OF_WEEK     ; Now fine out which day of the week it is this year
                     BNE     IRET            ; If it is not Sunday (for which zero is returned), skip it
-                    LDAA    TIME_OF_DAY     ; Only if this is the last Sunday in October do we
+                    LDAA    TIME_OF_DAY     ; Only if this is the first Sunday in November do we
                     SUBA    #6              ;  subtract one hour from the time
                     STAA    TIME_OF_DAY
                     INC     DAY             ; Set the daylight saving time bit to prevent changing the
@@ -1740,13 +1747,15 @@ RESTART             EQU     *               ; The pointer in the vector table ca
 CLEAR_RAM           CLR     $7F,X           ;  to zero
                     DEX
                     BNE     CLEAR_RAM
+                    LDAA    #2026-1984      ; Set the year to 2026
+                    STAA    YEAR
                     LDAA    #1              ; Set the month to 1
                     STAA    MONTH
                     STAA    A_D_SELECT      ; Also set the A/D converter to select channel 1
                     INCA                    ; Set the day to 2
                     STAA    DAY
-                    LDAA    #$0F            ; Set the alternate display mode selection value to
-                    STAA    ALT_SELECT      ;  select all four display modes
+                    LDAA    #$06            ; Set the alternate display mode selection value to
+                    STAA    ALT_SELECT      ;  select all F and time
                     LDD     #$FFFF          ; Finally, initialize the display memory to turn on all
                     STD     MSD             ;  eight segments of all six digits for the first few
                     STD     MSD+2           ; seconds as a means of testing all of that hardware
@@ -1794,7 +1803,7 @@ WAIT_ZERO           TST     ADC_STATE       ; Each time a twentieth of a second 
 ; of this single reading, then multiply this value by four 
 ; and put it back
 
-                    LDX     #15             ; The conversion buffer is 15 bytes long
+                    LDX     #14             ; The conversion buffer is 15 bytes long, but skip year (offset 14)
 CLEAR_BUF           CLR     CONV_BUF-1,X    ; clear the buffer starting with the last byte
                     DEX                     ; Decrement the combined counter and pointer
                     BNE     CLEAR_BUF       ; Repeat until all 15 bytes are zero
