@@ -384,7 +384,7 @@ STATE_0             EQU     *
                                             ;  the output compare pin for a positive transition on the next
                                             ;  interrupt
 ; A/D conversion state 2
-STATE_2             EQU     *               ; This routine is not reuqired to perform any A/D
+STATE_2             EQU     *               ; This routine is not required to perform any A/D
                                             ;  related functions, but it does perform every periodic
                                             ;  function whose period is longer than 1/20 second as well as
                                             ;  maintaining synchronization with the line

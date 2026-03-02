@@ -1,7 +1,9 @@
-To assemble to binary:
-  dasm therm.asm -f3 -otherm.bin -ltherm.lst
-To S19:
-  dasm therm.asm -f1 -otherm.s19  -ltherm.lst -stherm.sym
+To assemble to binary and make S19:
+  dasm therm.asm -f3 -otherm.bin -ltherm.lst -stherm.sym
+  ./mks19.pl therm.bin > therm.s19
+
+Simulate:
+ ~/sim68xx-0.9.9/src/boards/sim6301 therm.s19
 
 Original ROM image exp-10.bin dumped from 2716 ROM.
 Disable original ROM image (exp-10.bin):

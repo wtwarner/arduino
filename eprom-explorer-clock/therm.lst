@@ -1,0 +1,1867 @@
+------- FILE therm.asm LEVEL 1 PASS 2
+      1  10000 ????						; Boy Scout Explorer 1984 project
+      2  10000 ????						; sponsored by Hewlett-Packard, Avondale, PA.
+      3  10000 ????
+      4  10000 ????						; Copied from paper listing dated Thu, Jun 14, 1984
+      5  10000 ????						; code notes:
+      6  10000 ????						; - original used ' in names; this copy uses _; for example RCV'DATA vs. RCV_DATA.
+      7  10000 ????						; - original used STAD, LDAD mnemonics; this uses STD, LDD
+      8  10000 ????						;
+      9  10000 ????						; The following features are mentioned in code but do not appear
+     10  10000 ????						; to be implemented yet:
+     11  10000 ????						; - serial communication
+     12  10000 ????						; - alarms (nothing on schematic using these pins)
+     13  10000 ????
+     14  10000 ????				       processor	6803
+     15  10000 ????						;;; PAGE 1 HARDWARE DEFINITIONS
+     16  10000 ????
+     17  10000 ????						;;; INTERNAL HARDWARE DEFINTIONS
+     18  10000 ????		00 01	    ACC0       EQU	$01
+     19  10000 ????		00 02	    ACC1       EQU	$02
+     20  10000 ????		00 04	    ACC2       EQU	$04
+     21  10000 ????		00 08	    ACC3       EQU	$08
+     22  10000 ????		00 10	    ACC4       EQU	$10
+     23  10000 ????		00 20	    ACC5       EQU	$20
+     24  10000 ????		00 40	    ACC6       EQU	$40
+     25  10000 ????		00 80	    ACC7       EQU	$80
+     26  10000 ????
+     27  10000 ????		00 08	    TIMER_CONTROL EQU	$08	; timer interrupt control bits, flags, etc.
+     28  10000 ????		00 09	    TIMER_COUNTER EQU	$09	; And $0a - timer/counter register
+     29  10000 ????		00 0b	    TIMER_OCR_REG EQU	$0B	; And $0c - timer output compare register
+     30  10000 ????		00 0d	    TIMER_ICR_REG EQU	$0D	; And $oe - timer input capture register
+     31  10000 ????		00 08	    TIMER_EOCI EQU	ACC3
+     32  10000 ????		00 40	    TIMER_OCF  EQU	ACC6
+     33  10000 ????		00 01	    TIMER_OLVL EQU	ACC0	; output compare level bit
+     34  10000 ????
+     35  10000 ????		00 10	    SER_MODE_REG EQU	$10	; mode control register for serial i/o
+     36  10000 ????		00 11	    SER_STAT_REG EQU	$11	; status register for serial i/o
+     37  10000 ????		00 12	    RCV_DATA   EQU	$12	; data register for serial i/o
+     38  10000 ????		00 13	    XMIT_DATA  EQU	$13	; data register for serial transmitter
+     39  10000 ????		00 08	    RCV_ENABLE EQU	ACC3	; enable bit for receiver
+     40  10000 ????		00 02	    XMIT_ENABLE EQU	ACC1	; enable bit for transmitter
+     41  10000 ????		00 10	    RCV_INT_EN EQU	ACC4	; enable bit for receiver interrupt
+     42  10000 ????		00 04	    XMIT_INT_EN EQU	ACC2	; enable bit for transmitter interrupt
+     43  10000 ????		00 80	    RCV_FLAG   EQU	ACC7	; flag to indicate a byte has been received
+     44  10000 ????		00 20	    XMIT_FLAG  EQU	ACC5	; flag to indicate that the transmitter is ready to
+     45  10000 ????						;  send another byte
+     46  10000 ????		00 40	    OVERUN_FRAME EQU	ACC6	; flag to indicate that either an overrun error
+     47  10000 ????						;  or a framing error has occured
+     48  10000 ????
+     49  10000 ????						;;;  EXTERNAL HARDWARE DEFINTIONS
+     50  10000 ????		00 02	    PORT1      EQU	$02	; PARALLEL PORT 1 (ALL INPUTS)
+     51  10000 ????		00 20	    DST_JUMPER EQU	ACC5	; jumper to specify daylight saving time
+     52  10000 ????		00 40	    JUMPER_24  EQU	ACC6	; jumper to specify 24 hour time display
+     53  10000 ????		10 00	    MUX        EQU	$1000	; analog multiplexer select bits
+     54  10000 ????		60 00	    DIGIT_DRIVE EQU	$6000	; digit select bits for display
+     55  10000 ????		70 00	    SEGMENT_DRIVE EQU	$7000	; segment enable bits for display
+     56  10000 ????
+     57  10000 ????						;;  PAGE 2 DISPLAY HARDWARE DEFINTIONS
+     58  10000 ????		00 04	    SEGA       EQU	ACC2	; SEGMENT A (TOP)
+     59  10000 ????		00 20	    SEGB       EQU	ACC5	; SEGMENT B (UPPER RIGHT)
+     60  10000 ????		00 08	    SEGC       EQU	ACC3	; SEGMENT C (LOWER RIGHT)
+     61  10000 ????		00 80	    SEGD       EQU	ACC7	; SEGMENT D (BOTTOM)
+     62  10000 ????		00 40	    SEGE       EQU	ACC6	; SEGMENT E (LOWER LEFT)
+     63  10000 ????		00 10	    SEGF       EQU	ACC4	; SEGMENT F (UPPER LEFT)
+     64  10000 ????		00 02	    SEGG       EQU	ACC1	; SEGMENT G (CENTER)
+     65  10000 ????		00 01	    DP	       EQU	ACC0	; DECIMAL POINT
+     66  10000 ????		80 00	    COLON      EQU	ACC7*$100
+     67  10000 ????		40 00	    SET        EQU	ACC6*$100
+     68  10000 ????		20 00	    CURR       EQU	ACC5*$100
+     69  10000 ????		10 00	    TODAY      EQU	ACC4*$100
+     70  10000 ????		08 00	    YEST       EQU	ACC3*$100
+     71  10000 ????		04 00	    HIGH       EQU	ACC2*$100
+     72  10000 ????		02 00	    LOW        EQU	ACC1*$100
+     73  10000 ????		01 00	    MEAN       EQU	ACC0*$100
+     74  10000 ????		00 80	    DEGC       EQU	ACC7
+     75  10000 ????		00 40	    DEGF       EQU	ACC6
+     76  10000 ????		00 20	    AM	       EQU	ACC5
+     77  10000 ????		00 10	    PM	       EQU	ACC4
+     78  10000 ????		00 08	    DATE       EQU	ACC3
+     79  10000 ????		00 04	    ZONE1      EQU	ACC2
+     80  10000 ????		00 02	    ZONE2      EQU	ACC1
+     81  10000 ????		00 01	    ZONE3      EQU	ACC0
+     82  10000 ????
+     83  10000 ????		00 7e	    A	       EQU	SEGA+SEGB+SEGC+SEGE+SEGF+SEGG	; LETTER A
+     84  10000 ????		00 da	    B	       EQU	SEGC+SEGD+SEGE+SEGF+SEGG	; LETTER b
+     85  10000 ????		00 d4	    C	       EQU	SEGA+SEGD+SEGE+SEGF	; LETTER C
+     86  10000 ????		00 ea	    D	       EQU	SEGB+SEGC+SEGD+SEGE+SEGG	; LETTER d
+     87  10000 ????		00 d6	    E	       EQU	SEGA+SEGD+SEGE+SEGF+SEGG	; LETTER E
+     88  10000 ????		00 56	    F	       EQU	SEGA+SEGE+SEGF+SEGG	; LETTER F
+     89  10000 ????		00 7a	    H	       EQU	SEGB+SEGC+SEGE+SEGF+SEGG	; LETTER H
+     90  10000 ????		00 28	    I	       EQU	SEGB+SEGC	; LETTER I
+     91  10000 ????		00 d0	    L	       EQU	SEGD+SEGE+SEGF	; LETTER L
+     92  10000 ????		00 fc	    O	       EQU	SEGA+SEGB+SEGC+SEGD+SEGE+SEGF	; LETTER O
+     93  10000 ????		00 76	    P	       EQU	SEGA+SEGB+SEGE+SEGF+SEGG	; LETTER P
+     94  10000 ????		00 9e	    S	       EQU	SEGA+SEGC+SEGD+SEGF+SEGG	; LETTER S
+     95  10000 ????		00 f8	    U	       EQU	SEGB+SEGC+SEGD+SEGE+SEGF	; LETTER U
+     96  10000 ????		00 fc	    ZERO       EQU	O	; DIGIT 0
+     97  10000 ????		00 28	    ONE        EQU	I	; DIGIT 1
+     98  10000 ????		00 e6	    TWO        EQU	SEGA+SEGB+SEGD+SEGE+SEGG	; DIGIT 2
+     99  10000 ????		00 ae	    THREE      EQU	SEGA+SEGB+SEGC+SEGD+SEGG	; DIGIT 3
+    100  10000 ????		00 3a	    FOUR       EQU	SEGB+SEGC+SEGF+SEGG	; DIGIT 4
+    101  10000 ????		00 9e	    FIVE       EQU	S	; DIGIT 5
+    102  10000 ????		00 de	    SIX        EQU	SEGA+SEGC+SEGD+SEGE+SEGF+SEGG	; DIGIT 6
+    103  10000 ????		00 2c	    SEVEN      EQU	SEGA+SEGB+SEGC	; DIGIT 7
+    104  10000 ????		00 fe	    EIGHT      EQU	SEGA+SEGB+SEGC+SEGD+SEGE+SEGF+SEGG	; DIGIT 8
+    105  10000 ????		00 be	    NINE       EQU	SEGA+SEGB+SEGC+SEGD+SEGF+SEGG	; DIGIT 9
+    106  10000 ????
+    107  10000 ????						;;; PAGE 3 RAM ASSIGNMENTS
+    108 U00e3 ????				      SEG.U		; RAM 128 BYTES
+    109 U0080					      ORG	$80
+    110 U0080
+    111 U0080		       00	   RAM_PTR    DS	1
+    112 U0081		       00	   LINE_PHASE DS	1
+    113 U0082		       00 00	   TIME_CORRECT DS	2
+    114 U0084		       00	   DIGIT      DS	1
+    115 U0085		       00 00 00 00*MSD	      DS	6
+    116 U008b		       00	   ADC_STATE  DS	1
+    117 U008c		       00	   A_D_SELECT DS	1
+    118 U008d		       00 00 00 00*CONV_BUF   DS	5*3
+    119 U009c		       00 00	   START_TIME DS	2
+    120 U009c		       00 8f	   TIME_RESIDUAL EQU	CONV_BUF+2
+    121 U009e		       00	   MEAN_COUNT DS	1
+    122 U009f		       00 00 00    TODAY_MIN1 DS	3
+    123 U00a2		       00 00 00    TODAY_MIN2 DS	3
+    124 U00a5		       00 00 00    TODAY_MIN3 DS	3
+    125 U00a8		       00 00 00    TODAY_MAX1 DS	3
+    126 U00ab		       00 00 00    TODAY_MAX2 DS	3
+    127 U00ae		       00 00 00    TODAY_MAX3 DS	3
+    128 U00b1		       00 00 00    LAST_MIN1  DS	3
+    129 U00b4		       00 00 00    LAST_MIN2  DS	3
+    130 U00b7		       00 00 00    LAST_MIN3  DS	3
+    131 U00ba		       00 00 00    LAST_MAX1  DS	3
+    132 U00bd		       00 00 00    LAST_MAX2  DS	3
+    133 U00c0		       00 00 00    LAST_MAX3  DS	3
+    134 U00c3		       00 00 00    LAST_MEAN1 DS	3
+    135 U00c6		       00 00 00    LAST_MEAN2 DS	3
+    136 U00c9		       00 00 00    LAST_MEAN3 DS	3
+    137 U00cc		       00 00 00    TODAY_MEAN1 DS	3
+    138 U00cf		       00 00 00    TODAY_MEAN2 DS	3
+    139 U00d2		       00 00 00    TODAY_MEAN3 DS	3
+    140 U00d2		       00 92	   TWENTIETHS EQU	CONV_BUF+5
+    141 U00d2		       00 95	   TENTHS     EQU	CONV_BUF+8
+    142 U00d2		       00 98	   TIME_OF_DAY EQU	CONV_BUF+11
+    143 U00d2		       00 c5	   DAY	      EQU	LAST_MEAN1+2
+    144 U00d2		       00 c8	   MONTH      EQU	LAST_MEAN2+2
+    145 U00d2		       00 9b	   YEAR       EQU	CONV_BUF+14
+    146 U00d5		       00 00	   DISP_SELECT DS	2
+    147 U00d5		       00 d6	   ZONE_SELECT EQU	DISP_SELECT+1
+    148 U00d5		       00 cb	   ALT_SELECT EQU	LAST_MEAN3+2
+    149 U00d7		       00	   LAST_KBD   DS	1
+    150 U00d8		       00	   ALARM      DS	1
+    151 U00d9		       00 00 00 00 TEMP       DS	4
+    152 U00dd		       00 00 00 00*TEMP_BUF   DS	6
+    153 U00e3
+    154  10000 ????				       SEG	CODE,0
+    155  f800					      ORG	$F800
+    156  f800
+    157  f800							;;;  PAGE 4 CLOCK TIMER INTERRUPT SERVICING
+    158  f800
+    159  f800							; All of the software in this program can be divided into two
+    160  f800							; categories - that which is executed as the result of an interrupt
+    161  f800							; and that which is not. The software which is not executed under
+    162  f800							; interrupt includes initialization after reset, keyboard servicing,
+    163  f800							; display servicing and serial communications.  These are all basically
+    164  f800							; asynchronous operations in that they are not periodic functions
+    165  f800							; that are performed at fixed time intervals, although they are
+    166  f800							; indirectly tied into a repetition rate of 20 times each second in
+    167  f800							; order to provide sipmle debouncing of the keyboard.
+    168  f800							; All other functions of this program are periodic and are performed
+    169  f800							; by the timer interrupt service routine. This routine can request
+    170  f800							; that a timer interrupt occur, causin the routine to be executed
+    171  f800							; at whatever interval it likes, and the interval which it selects is
+    172  f800							; 2.778 milliseconds. This value is essentially 1/360 second, and the
+    173  f800							; reason that this inverval was chosen was to allow the display
+    174  f800							; refreshing to be performed 360 times each second. In addition, it
+    175  f800							; will be seen that there are other functions which are performed at
+    176  f800							; less frequent intervals by this routine sipmly by executing the
+    177  f800							; appropriate code every n'th time an interrupt occurs, where n is
+    178  f800							; 6, 18, 2160, etc. This gives execution frequencies of 60 hz, 20 hz,
+    179  f800							; 1/6 hz, once each 10 minutes, once each day, once each
+    180  f800							; month and once each year.  For clarity, the software has been
+    181  f800							; divided up to show which parts are executed at which intervals.
+    182  f800							;
+    183  f800							; One of the main functions of this routine is to operate the
+    184  f800							; analog to digital converter, or A/A. each conversions consists of
+    185  f800							; two simple operations. First, one of the analog input signals is
+    186  f800							; used to charge up a capacitor for a fixed time period. This means
+    187  f800							; that the amount of charge in the capacitor is now directly
+    188  f800							; proportional to the signal voltage. Next, the capacitor is
+    189  f800							; discharged at a fixed rate using a reference signal of the
+    190  f800							; opposite polarity until the capacitor voltage is back to zero.
+    191  f800							; The time taken to discharge the capacitor is measured and is a
+    192  f800							; direct measure of the input signal.	The hardware then holds the
+    193  f800							; capacitor in a discharged state until the start of the next
+    194  f800							; measurement cycle.  This process is repeated every 1/20 second,
+    195  f800							; with the integration of the input signal taking the first 1/60
+    196  f800							; second and the discharge and wait for the next measurement taking
+    197  f800							; the remaining 2/60 second.
+    198  f800
+    199  f800							;;;  PAGE 5 CLOCK TIMER INTERRUPT SERVICING
+    200  f800
+    201  f800							;;;  Begin the timer interrupt service routine
+    202  f800
+    203  f800		       f8 00	   TIMER_INT  EQU	*	; Arrive at this point an average of once every
+    204  f800							;  1/360 second as a result of a timer interrupt
+    205  f800							; The task which is most sensitive to timing, and is therefore
+    206  f800							; performed first, is that of maintaining synchronization with the
+    207  f800							; AC line. Once every 1/360 second the line voltage is tested to see
+    208  f800							; whether it is above or below zero volts. At any time it is
+    209  f800							; possible to check this information for the previous 8 interrupts,
+    210  f800							; which covers a period of slightly more than one full line cycle.
+    211  f800							; This infomation will be used by another part of this routine,
+    212  f800							; which executes once every 1/20 second.
+    213  f800
+    214  f800		       d6 02		      LDAB	PORT1	; The line voltage information is read in through the
+    215  f802							;  most significant bit of port 1.
+    216  f802		       96 81		      LDAA	LINE_PHASE	; The value of this bit for the last eight interrupts
+    217  f804							;  is contained in the variable LINE_PHASE.
+    218  f804		       05		      LSLD		; This instruction throws away the oldest bit line_phase,
+    219  f805							;   shifts the other seven left one place and enters the newest
+    220  f805							;   bit in the least significant bit of the value
+    221  f805		       97 81		      STAA	LINE_PHASE	; Save this for later interrupts and other uses
+    222  f807
+    223  f807							; Every time there is a timer interrupt the hardware must be told
+    224  f807							; when the next interrupt is to occur. This information is written
+    225  f807							; into a 16 bit hardware register called the output compare register
+    226  f807							; (OCR). Since this register already contains the time at which the
+    227  f807							; present interrupt was triggered, all that is necessary is to take
+    228  f807							; this value and add the equivalent of 1/360 second to it, then
+    229  f807							; put it back.
+    230  f807		       96 08		      LDAA	TIMER_CONTROL	; Read the flag so that it will be cleared
+    231  f809		       dc 0b		      LDD	TIMER_OCR_REG	; Load the 16 bit time at which this interrupt
+    232  f80b		       c3 0a da 	      ADDD	#2778	;  occurred - the value 2778 is the number of instruction
+    233  f80e							;  cycles, at 1,000,000 cycles each second, in 1/360 second
+    234  f80e		       dd 0b		      STD	TIMER_OCR_REG	; The value 2778 is not exactly the correct value
+    235  f810							;  but a further correction will be made later to compensate
+    236  f810
+    237  f810							; The serial port servicing, once it is written, will require a
+    238  f810							; short routine to read the serial port receiver register and
+    239  f810							; transfer any received character to the input buffer
+    240  f810
+    241  f810
+    242  f810							;;; PAGE 6 CLOCK TIMER INTERRUPT SERVICING
+    243  f810
+    244  f810							; The only other task which occurs every 1/360 second is the
+    245  f810							; refreshing of the display, at each interrupt the digit which is
+    246  f810							; currently being displayed is turned off and the required segments
+    247  f810							; of the next digit are turned on.
+    248  f810
+    249  f810		       7f 70 00 	      CLR	SEGMENT_DRIVE	; Turn off all segments before enabling the next
+    250  f813							;  digit in order to avoid 'ghost' segments
+    251  f813		       96 84		      LDAA	DIGIT	; The variable 'digit' has just one bit set corresponding
+    252  f815							;  to the digit which is to be enabled next
+    253  f815		       16		      TAB		; Make a second copy of it
+    254  f816		       da d8		      ORAB	ALARM	; Add in the bits which control the two alarm outputs
+    255  f818		       f7 60 00 	      STAB	DIGIT_DRIVE	; Write these bits out to the hardware
+    256  f81b		       ce 00 84 	      LDX	#MSD-1	; It is now necessary to find out which segments to turn
+    257  f81e							;  on for this digit - this information is contained in
+    258  f81e							;  a six byte array in memory
+    259  f81e		       08	   SELECT_RFSH INX		; Point to the segments of the first digit
+    260  f81f		       48		      LSLA		; If that is the one to be displayed then its bit will shift out
+    261  f820							;  of register A, leaving a zero
+    262  f820		       26 fc		      BNE	SELECT_RFSH	; If the value in A is not yet zero then it is not
+    263  f822							;  the first digit, so go back, point to the second digit
+    264  f822							;  and see if it is the one to be displayed, etc.
+    265  f822		       a6 00		      LDAA	0,X	; Eventually the bit which was set in register A will be
+    266  f824							;  shifted out and the index register will contain the address
+    267  f824							;  of the segments for this digit, so load the segment bits
+    268  f824							;  themselves into register A
+    269  f824		       b7 70 00 	      STAA	SEGMENT_DRIVE	; Write them out to the hardware, turning on
+    270  f827							;  those segments
+    271  f827		       78 00 84 	      LSL	DIGIT	; Shift the digit bit left one place so that when the next
+    272  f82a							;  interrupt occurs the next digit will be displayed
+    273  f82a		       27 05		      BEQ	SIXTY_HZ	; Eventually the bit will be shifted out to leave a
+    274  f82c							;  value of zero - each time this occurs we go on to
+    275  f82c							;  execute the 60 Hz and slower operations - the other
+    276  f82c							;  five times out of six we just make sure that an
+    277  f82c							;  output bit will get set to zero
+    278  f82c		       86 08		      LDAA	#TIMER_EOCI	; Clear the bit that controls the level of the
+    279  f82e		       97 08		      STAA	TIMER_CONTROL	;  output compare pin - this guarantees that it
+    280  f830							;  will normally be low
+    281  f830		       3b		      RTI		; This completes the functions which are performed 360 times
+    282  f831							;  each second
+    283  f831
+    284  f831							;; PAGE 7 CLOCK TIMER INTERRUPT SERVICING
+    285  f831
+    286  f831							; Operations which are performed 60 times each second
+    287  f831
+    288  f831		       86 04	   SIXTY_HZ   LDAA	#ACC2	; Each time the digit bit shifts all the way out, must
+    289  f833		       97 84		      STAA	DIGIT	;  reinitialize it to select last digit
+    290  f835
+    291  f835							; The only other 60 Hz operation is the selection of which 20 Hz
+    292  f835							; operation is to be performed at this time
+    293  f835		       96 8b		      LDAA	ADC_STATE	; The ADC state counter can have values 0, 1, 2
+    294  f837							;  or 3, but this routine should only see values of 1, 2, or 3 at this
+    295  f837							;  point
+    296  f837		       4a		      DECA		; Decrement the state value to 0, 1, or 2 and save it
+    297  f838		       97 8b		      STAA	ADC_STATE	; The value of 0 is used as an indicator to the
+    298  f83a							;  background task that another 1/20 second has elapsed - the
+    299  f83a							;  background task will then set the state value back up to 3
+    300  f83a							; Now branch to one of three routines which are each executed
+    301  f83a							; at 20 hz
+    302  f83a		       27 31		      BEQ	STATE_0	; If the state counter is zero, execute the state zero
+    303  f83c							;  routine
+    304  f83c		       4a		      DECA		; Otherwise see if it is one
+    305  f83d		       27 07		      BEQ	STATE_1	; Go to state one if it is
+    306  f83f		       4a		      DECA		; Finally, see if we are in state 2
+    307  f840		       27 33		      BEQ	STATE_2
+    308  f842		       7f 00 8b 	      CLR	ADC_STATE	; If it is noe of these then there is a very serious
+    309  f845		       3b		      RTI		;  problem, but see if we can recover from it by just setting
+    310  f846							;  the state to a known value and returning to background
+    311  f846
+    312  f846							;; PAGE 8 CLOCK TIMER INTERRUPT SERVICING
+    313  f846
+    314  f846							; A/D servicing
+    315  f846							;
+    316  f846							; The three A/D service routines perform the following functions:
+    317  f846							; in state one, the integration of one of the anlog signals is
+    318  f846							; initiated by writing its selection code into the first latch of
+    319  f846							; the A/D circuit. The output level bit is then set high so that
+    320  f846							; there will be a positive transition on the next timer interrupt,
+    321  f846							; which will transfer the select bits to the second latch. Before
+    322  f846							; any of this is done, however, this routine finishes the previous
+    323  f846							; conversion by reading in the input capture value and performing
+    324  f846							; filtering on it.
+    325  f846							; In state zero, the integration is terminated and discharging
+    326  f846							; begins.
+    327  f846							; In state two, nothing is done which involves the A/D, but in
+    328  f846							; this state any periodic function which occurs less frequently
+    329  f846							; than 20 Hz takes place, such as updating the clock and calendar
+    330  f846							; as well as minimum, maximum and mean temperature calculations.
+    331  f846							; Phase adjustment to the AC line also takes place in this routine.
+    332  f846
+    333  f846							; A/D converion, state 1
+    334  f846		       d6 8c	   STATE_1    LDAB	A_D_SELECT	; See which signal was just measured
+    335  f848		       ce 00 8a 	      LDX	#CONV_BUF-3	; Point to the buffer of filtered conversion values
+    336  f84b		       3a		      ABX		; The filtered values are each three bytes apart so add the
+    337  f84c		       58		      LSLB		;  channel number times three to point to the appriopriate entry
+    338  f84d		       3a		      ABX		; This is the address of the filtered value for this channel
+    339  f84e		       dc 0d		      LDD	TIMER_ICR_REG	; Get the time at which the conversion ended
+    340  f850		       93 9c		      SUBD	START_TIME	; Subtract the time at which the discharge started
+    341  f852							; This is the discharge time and is a direct measure
+    342  f852							;  of the signal voltage
+    343  f852		       a3 00		      SUBD	0,X	; Find the difference between this and the old filtered
+    344  f854							;  value - the object here is to add back a small fraction
+    345  f854							;  of this difference to the old filtered value in order
+    346  f854							;  to arrive at a new filtered value - in this case we will
+    347  f854							;  take 1/4 of the difference and add it back
+    348  f854		       47		      ASRA		; Do an arithmetic shift right since the difference is signed
+    349  f855		       56		      RORB		; Shift the second byte
+    350  f856		       47		      ASRA		; Shift a second time
+    351  f857		       56		      RORB
+    352  f858		       e3 00		      ADDD	0,X	; Add the upper two bytes of the values
+    353  f85a		       ed 00		      STD	0,X	; Save these two bytes
+    354  f85c							; The net result of the above is as follows: at each conversion the
+    355  f85c							; old filtered value has added to it 1/4 of the differences between
+    356  f85c							; the new conversion value and the old filtered value. This causes
+    357  f85c							; the filter response to be expoential with a time constant of
+    358  f85c							; 4 times the interval between conversions. Since one conversion
+    359  f85c							; is performed every 1/20 second and there are five channels, each
+    360  f85c							; channel is measured once every 0.25 seconds. This makes the time
+    361  f85c							; constant of the filter equal to 0.25 * 4 = 1 second.
+    362  f85c		       96 8c		      LDAA	A_D_SELECT	; Now that the conversion is complete,
+    363  f85e		       4a		      DECA		;  see which input to measure next
+    364  f85f		       26 02		      BNE	STORE_A_D_S	; As long as the channel number is between 1 and 5, use it
+    365  f861		       86 05		      LDAA	#5	; When it decrements to zero, restart it at 5
+    366  f863		       97 8c	   STORE_A_D_S STAA	A_D_SELECT	; Save the new counter value
+    367  f865		       b7 10 00    SET_MUX    STAA	MUX	; Set the multiplexer to select this channel on the
+    368  f868							;  next output compare interrupt
+    369  f868		       86 09		      LDAA	#TIMER_EOCI+TIMER_OLVL	; Must also set the output level control
+    370  f86a		       97 08		      STAA	TIMER_CONTROL	;  bit to cause a positive transition at that
+    371  f86c							;  interrupt
+    372  f86c		       3b		      RTI		; This completes state 1 processing
+    373  f86d
+    374  f86d							;; PAGE 10 CLOCK TIMER INTERRUPT SERVICING
+    375  f86d
+    376  f86d							; A/D conversion state 0
+    377  f86d		       f8 6d	   STATE_0    EQU	*
+    378  f86d		       dc 0b		      LDD	TIMER_OCR_REG	; Note the time at which the discharge will begin
+    379  f86f		       dd 9c		      STD	START_TIME	; Save it to use in the calculations for this conversion
+    380  f871		       86 0f		      LDAA	#7+ACC3	; To start the discharge, select channel 7 of the
+    381  f873							;  multiplexer and also set the bit which enables the compartor
+    382  f873		       20 f0		      BRA	SET_MUX	; Use the section of code above to write this value out
+    383  f875							;  to the multiplexer channel select latch and also to prepare
+    384  f875							;  the output compare pin for a positive transition on the next
+    385  f875							;  interrupt
+    386  f875							; A/D conversion state 2
+    387  f875		       f8 75	   STATE_2    EQU	*	; This routine is not required to perform any A/D
+    388  f875							;  related functions, but it does perform every periodic
+    389  f875							;  function whose period is longer than 1/20 second as well as
+    390  f875							;  maintaining synchronization with the line
+    391  f875
+    392  f875							;; Line synchronization function
+    393  f875
+    394  f875							; There are two basic purposes to this section: first, it maintains
+    395  f875							; correct synchronization with the ac line at all times. To do
+    396  f875							; this, it checks once during each conversion to see whether then
+    397  f875							; internal timing has shifted by more than plus or minus 60 degrees
+    398  f875							; with respect to the ac line. If it has then the internal timing
+    399  f875							; is shifted slightly, making that measurement cycle slightly longer
+    400  f875							; or slightly shorter than nominal to try to bring the timing back
+    401  f875							; within the plus or minus 60 degree phase window. If there has been
+    402  f875							; a large phase shift then it might take several shortened or
+    403  f875							; lengthened cycles to get back to within the window.	As soon as they
+    404  f875							; are back in phase, normal length cycles are resumed. The second
+    405  f875							; function is more subtle. It is also activated by phase shifts of
+    406  f875							; more than 60 degrees, but in this case the effect is to make very
+    407  f875							; small but permanent changes in the normal lengt of a cycle.	This
+    408  f875							; type of change would not be necessary if the ac line signal were
+    409  f875							; always going to be present to maintian synchronization, but since
+    410  f875							; the instrument can have a battery backup, and since better accuracy
+    411  f875							; than just the nominal crystal frequency accuracy is desirable, the
+    412  f875							; software is, in effect, gradually forming a correction to the
+    413  f875							; crystal frequency, based on line frequency, which will then be
+    414  f875							; used while the ac power is off.
+    415  f875
+    416  f875		       96 83		      LDAA	TIME_CORRECT+1	; Since the period of a conversion is 50,000
+    417  f877							;  instruction cycles, if the correction were an integer value in
+    418  f877							;  cycles, the best correction that could be made is plus or minus
+    419  f877							;  1/50,000 which is nearly two seconds per day of error - to get
+    420  f877							;  around this, a one byte fractional correction is maintained.
+    421  f877		       9b 8f		      ADDA	TIME_RESIDUAL	; To use this correction, it is added each time to
+    422  f879							;  a one byte residual value, and each time there is a carry
+    423  f879							;  from this byte, one more full instruction cycle is added
+    424  f879							;  to this time
+    425  f879		       97 8f		      STAA	TIME_RESIDUAL	; Save the new residual
+    426  f87b		       dc 0b		      LDD	TIMER_OCR_REG	; Take the previously calculated time of the next
+    427  f87d							;  interrupt
+    428  f87d							;; PAGE 11
+    429  f87d		       d9 82		      ADCB	TIME_CORRECT	; Add in the upper byte of the correction value
+    430  f87f		       89 00		      ADCA	#0	; Handle any carry to the top byte of the interrupt time
+    431  f881		       7d 00 82 	      TST	TIME_CORRECT	; See whether the correction was intended to be
+    432  f884							;  positive or negative
+    433  f884		       2a 01		      BPL	IS_POS	; If it is negative then
+    434  f886		       4a		      DECA		; subtract one count from the top byte
+    435  f887		       dd 0b	   IS_POS     STD	TIMER_OCR_REG	; Put back the corrected time of the next interrupt
+    436  f889		       de 82		      LDX	TIME_CORRECT	; Get the correction value in case it whill need to
+    437  f88b							;  be adjusted
+    438  f88b		       96 81		      LDAA	LINE_PHASE	; See what the AC line has been doing for the last
+    439  f88d							;  eight interrupts
+    440  f88d		       81 1c		      CMPA	#%00011100	; Test for internal time fast by 60 degrees or more
+    441  f88f		       26 04		      BNE	IS_NOT_FAST	; If it is then
+    442  f891		       7a 00 0b 	      DEC	TIMER_OCR_REG	;  shorten this conversion
+    443  f894		       09		      DEX		;  and slightly shorten all subsequenty conversions
+    444  f895		       81 e3	   IS_NOT_FAST CMPA	#%11100011	; Else test for internal time slow
+    445  f897		       26 04		      BNE	IS_NOT_SLOW	; If it is then
+    446  f899		       7c 00 0b 	      INC	TIMER_OCR_REG	;  lengthen this conversion
+    447  f89c		       08		      INX		;  and slightly length all subsequent conversions
+    448  f89d		       df 82	   IS_NOT_SLOW STX	TIME_CORRECT	; Put back the (possibly) modified correction
+    449  f89f
+    450  f89f							;; PAGE 12
+    451  f89f
+    452  f89f							; The final operation to be performed at 20 Hz is decrementing a
+    453  f89f							; counter which is used to time 6 second intervals, because the
+    454  f89f							; next groups of functions is performed ten times each minute
+    455  f89f		       7a 00 92 	      DEC	TWENTIETHS	; This variable counts twentieths of a second
+    456  f8a2		       26 59		      BNE	IRET	; If six seconds have not elapsed yet then just return
+    457  f8a4		       86 78		      LDAA	#120	; Else restart the counter at six seconds
+    458  f8a6		       97 92		      STAA	TWENTIETHS
+    459  f8a8		       96 95		      LDAA	TENTHS	; The next counter is used to count tenths of a minute.
+    460  f8aa		       8b 01		      ADDA	#1	;  In BCD, up to 99 tenths
+    461  f8ac		       19		      DAA		; Since this is a BCD counter, adjust it to a decimal value each
+    462  f8ad		       97 95		      STAA	TENTHS	;  time it is incremented
+    463  f8af		       27 4d		      BEQ	TEN_MINUTES	; If ten minutes has elapsed then perform those
+    464  f8b1							;  functions which are done every ten minutes.
+    465  f8b1
+    466  f8b1							;; PAGE 13
+    467  f8b1
+    468  f8b1							; The next function is performed 99 times every ten minutes.  It is
+    469  f8b1							; not done the hundredth time because there is a lot more to be
+    470  f8b1							; done that time and it would make the processor loading much higher
+    471  f8b1							; to do both. the function of this section of code is to update the
+    472  f8b1							; minimum and maximum values of each of the three zone temperatures.
+    473  f8b1							; The mean values are updated at ten minute intervals.
+    474  f8b1		       96 98		      LDAA	TIME_OF_DAY	; Load the current time into register A in case we
+    475  f8b3							;  need to note the time at which a new min or max was reached
+    476  f8b3		       de 8d		      LDX	CONV_BUF	; Load the current temperature of zone 1
+    477  f8b5		       9c a8		      CPX	TODAY_MAX1	; see if it is a new daily maximum
+    478  f8b7		       24 04		      BHS	IS_HIGHER1	; Since the conversion value varies inversely with the
+    479  f8b9							;  temperature, the sense of the test looks backward
+    480  f8b9		       df a8		      STX	TODAY_MAX1	; If the current temp ois higher than the previous
+    481  f8bb							;  daily maximum then replace the old maximum with the current
+    482  f8bb		       97 aa		      STAA	TODAY_MAX1+2	; The third byte of this value is the time of day
+    483  f8bd							;  at which the maximum occured, in tens of minutes.
+    484  f8bd		       9c 9f	   IS_HIGHER1 CPX	TODAY_MIN1	; If no new maximum then see if new minimum
+    485  f8bf		       23 04		      BLS	IS_LOWER1	; Again, skip the next 2 instructions if no new min
+    486  f8c1		       df 9f		      STX	TODAY_MIN1
+    487  f8c3		       97 a1		      STAA	TODAY_MIN1+2
+    488  f8c5		       de 90	   IS_LOWER1  LDX	CONV_BUF+3	; Do the same for zone 2
+    489  f8c7		       9c ab		      CPX	TODAY_MAX2
+    490  f8c9		       24 04		      BHS	IS_HIGHER2
+    491  f8cb		       df ab		      STX	TODAY_MAX2
+    492  f8cd		       97 ad		      STAA	TODAY_MAX2+2
+    493  f8cf		       9c a2	   IS_HIGHER2 CPX	TODAY_MIN2
+    494  f8d1		       23 04		      BLS	IS_LOWER2
+    495  f8d3		       df a2		      STX	TODAY_MIN2
+    496  f8d5		       97 a4		      STAA	TODAY_MIN2+2
+    497  f8d7		       de 93	   IS_LOWER2  LDX	CONV_BUF+6	; And for zone 3
+    498  f8d9		       9c ae		      CPX	TODAY_MAX3
+    499  f8db		       24 04		      BHS	IS_HIGHER3
+    500  f8dd		       df ae		      STX	TODAY_MAX3
+    501  f8df		       97 b0		      STAA	TODAY_MAX3+2
+    502  f8e1		       9c a5	   IS_HIGHER3 CPX	TODAY_MIN3
+    503  f8e3		       23 04		      BLS	IS_LOWER3
+    504  f8e5		       df a5		      STX	TODAY_MIN3
+    505  f8e7		       97 a7		      STAA	TODAY_MIN3+2
+    506  f8e9		       7f 00 d8    IS_LOWER3  CLR	ALARM	; Calculate the new alarm bits, first clearing out the old
+    507  f8ec		       dc 99		      LDD	CONV_BUF+12	; See if zone 3 is higher than the high reference
+    508  f8ee		       93 93		      SUBD	CONV_BUF+6
+    509  f8f0		       79 00 d8 	      ROL	ALARM	; If it is then set the low temp alarm bit (high to turn on)
+    510  f8f3		       dc 93		      LDD	CONV_BUF+6	; See if zone 3 is lower than the average of the high
+    511  f8f5		       05		      LSLD		;  and low references
+    512  f8f6		       93 96		      SUBD	CONV_BUF+9
+    513  f8f8		       93 99		      SUBD	CONV_BUF+12
+    514  f8fa		       79 00 d8 	      ROL	ALARM	; If it is then set the high temp alarm (high to turn on)
+    515  f8fd		       3b	   IRET       RTI		; This completes the operations performed ten times each
+    516  f8fe							;  minute
+    517  f8fe							;; PAGE 14
+    518  f8fe							;; Functions performed every ten minutes
+    519  f8fe
+    520  f8fe							; Every ten minutes the calculated value of today's mean temperature
+    521  f8fe							; for each of the three zones is updated. After that, a check is made
+    522  f8fe							; for two special times of the day, midnight and 2AM.
+    523  f8fe
+    524  f8fe		       f8 fe	   TEN_MINUTES EQU	*
+    525  f8fe		       dc cd		      LDD	TODAY_MEAN1+1	; Get the second and third bytes of the running
+    526  f900							;  sum of zone 1 at ten minute intervals so far today
+    527  f900		       d3 8d		      ADDD	CONV_BUF	; Add in the latest value for this zone
+    528  f902		       dd cd		      STD	TODAY_MEAN1+1	; Return the updated second and third bytes
+    529  f904		       24 03		      BCC	NO_CARRY1	; If there was a carry generated by this addition then
+    530  f906		       7c 00 cc 	      INC	TODAY_MEAN1	;  increment the first byte
+    531  f909
+    532  f909		       dc d0	   NO_CARRY1  LDD	TODAY_MEAN2+1	; Repeat the process for zone 2
+    533  f90b		       d3 90		      ADDD	CONV_BUF+3
+    534  f90d		       dd d0		      STD	TODAY_MEAN2+1
+    535  f90f		       24 03		      BCC	NO_CARRY2
+    536  f911		       7c 00 cf 	      INC	TODAY_MEAN2
+    537  f914
+    538  f914		       dc d3	   NO_CARRY2  LDD	TODAY_MEAN3+1	; And for zone 3
+    539  f916		       d3 93		      ADDD	CONV_BUF+6
+    540  f918		       dd d3		      STD	TODAY_MEAN3+1
+    541  f91a		       24 03		      BCC	NO_CARRY3
+    542  f91c		       7c 00 d2 	      INC	TODAY_MEAN3
+    543  f91f
+    544  f91f		       7c 00 9e    NO_CARRY3  INC	MEAN_COUNT	; Increment the counter to show that one more value has
+    545  f922							;  been summed in
+    546  f922		       96 98		      LDAA	TIME_OF_DAY	; Now increment the time-of-day counter by ten minutes
+    547  f924		       4c		      INCA
+    548  f925		       81 90		      CMPA	#6*24	; See if it is midnight
+    549  f927		       24 61		      BHS	MIDNIGHT	; If it isi then take care of any daily chores
+    550  f929		       97 98		      STAA	TIME_OF_DAY	; Otherwise save the incremented time
+    551  f92b		       81 0c		      CMPA	#6*2	; Now see if it is 2AM
+    552  f92d		       26 ce		      BNE	IRET	; If not then we are done for now
+    553  f92f		       96 02		      LDAA	PORT1	; If it is 2AM then there is a possibility that we need to
+    554  f931		       85 20		      BITA	#DST_JUMPER	;  adjust for daylight saving time
+    555  f933		       26 c8		      BNE	IRET	; If the jumper has been removed then daylight saving time is
+    556  f935							;  disabled.
+    557  f935		       96 c8		      LDAA	MONTH	; Next see if it is April or October
+    558  f937		       81 0a		      CMPA	#10	; October is month number 10
+    559  f939		       27 18		      BEQ	OCTOBER	; If it is October then check for return to standard time
+    560  f93b		       81 04		      CMPA	#4	; Otherwise see if it is April
+    561  f93d		       26 be		      BNE	IRET	; If it is not April either there is nothing more to do
+    562  f93f		       96 c5		      LDAA	DAY	; Now see what day of the month it is
+    563  f941		       44		      LSRA		; Shift out the daylight savings flag
+    564  f942		       80 18		      SUBA	#24	; See if this is last week in April
+    565  f944		       25 b7		      BLO	IRET	; If not then skip it
+    566  f946							; Note - April 24 1984 was a Tuesday
+    567  f946		       8b 02		      ADDA	#2	; Add 2 to get the day of week this would have been in 1984
+    568  f948		       8d 22		      BSR	DAY_OF_WEEK	; Now find out what day of the week it is this year
+    569  f94a		       26 b1		      BNE	IRET	; If it is not Sunday (for which zero is returned), skip it
+    570  f94c		       96 98		      LDAA	TIME_OF_DAY	; Only if this is the last Sunday in April do we
+    571  f94e		       8b 06		      ADDA	#6	;  add one hour to the time
+    572  f950		       97 98		      STAA	TIME_OF_DAY
+    573  f952		       3b		      RTI
+    574  f953
+    575  f953							;; PAGE 15
+    576  f953
+    577  f953		       96 c5	   OCTOBER    LDAA	DAY	; If this is October then see what the date is
+    578  f955		       44		      LSRA		; Shift out the daylight saving flag
+    579  f956		       25 a5		      BCS	IRET	; If this bit is set then we have already adjusted then time
+    580  f958							;  back to standard time
+    581  f958		       80 19		      SUBA	#25	; Otherwise see if this is the last week in October
+    582  f95a		       25 a1		      BLO	IRET	; If not then skip it
+    583  f95c							; Note - October 25 1984 was a Thursday
+    584  f95c		       8b 04		      ADDA	#4	; Add 4 to get the day of week this would have been in 1984
+    585  f95e		       8d 0c		      BSR	DAY_OF_WEEK	; Now fine out which day of the week it is this year
+    586  f960		       26 9b		      BNE	IRET	; If it is not Sunday (for which zero is returned), skip it
+    587  f962		       96 98		      LDAA	TIME_OF_DAY	; Only if this is the last Sunday in October do we
+    588  f964		       80 06		      SUBA	#6	;  subtract one hour from the time
+    589  f966		       97 98		      STAA	TIME_OF_DAY
+    590  f968		       7c 00 c5 	      INC	DAY	; Set the daylight saving time bit to prevent changing the
+    591  f96b							;  time again in another hour
+    592  f96b		       3b		      RTI
+    593  f96c
+    594  f96c		       f9 6c	   DAY_OF_WEEK EQU	*	; Subroutine to correct the day of the week according
+    595  f96c							;  to the year
+    596  f96c							; Pass a value from 0 to 6 in A, returns a value from 0 to 6 in A
+    597  f96c		       d6 9b		      LDAB	YEAR	; Get the value of the year, relative to 1984
+    598  f96e		       c4 03		      ANDB	#ACC0+ACC1	; Get the value mod 4
+    599  f970		       1b		      ABA		; Add one day for each non leap year past the last leap year
+    600  f971		       d6 9b		      LDAB	YEAR	; Get the year again
+    601  f973		       54		      LSRB		; look at just the other six bits in the year
+    602  f974		       54		      LSRB
+    603  f975		       c1 1d	   HUNDRED_YEAR CMPB	#(2100-1984)/4	; See if the year is greater than or
+    604  f977							;  or equal to 2100
+    605  f977		       25 06		      BLO	LEAP_YEARS	; If not then finish correcting leap years
+    606  f979		       8b 05		      ADDA	#5	; In a normal period of 100 years there are 76 non leap years
+    607  f97b							;  and 24 leap years, for a total shift of 124 days
+    608  f97b							;  124 mod 7 is 5
+    609  f97b		       c0 19		      SUBB	#100/4	; This correction is not made for the 100 year period
+    610  f97d							;  which includes the year 2000, since it is a leap year
+    611  f97d		       20 f6		      BRA	HUNDRED_YEAR	; Repeat the above in case the year is 2200 or later
+    612  f97f
+    613  f97f		       36	   LEAP_YEARS PSHA		; Save the day count on the stack
+    614  f980		       86 05		      LDAA	#5	; multiply the number of leap years by 5
+    615  f982		       3d		      MUL
+    616  f983		       32		      PULA		; Get back the day couint
+    617  f984		       1b		      ABA		; Combine them
+    618  f985		       80 07	   DEDUCT_7   SUBA	#7	; Subtract one week from the day count
+    619  f987		       22 fc		      BHI	DEDUCT_7	; Do this over and over until the count goes negative
+    620  f989							;  or to zero (it will only go to zero for a Sunday)
+    621  f989		       39		      RTS		; Return with the day-of-week value from -6 to 0 and its
+    622  f98a							;  Status in the flags
+    623  f98a
+    624  f98a							;; PAGE 16
+    625  f98a
+    626  f98a							;; Functions performed at midnight every day
+    627  f98a
+    628  f98a							; The following operations all have to do with updating the day,
+    629  f98a							; month and year counters.  The day counter has a range of one to
+    630  f98a							; 28, 29, 30 or 31, depending on the month, but is stored as twice
+    631  f98a							; this value so that the least significant bit can be used as a flag
+    632  f98a							; to indicate that a change from daylight saving time to standard
+    633  f98a							; time has been made that day. The month has a value from 1 to 12
+    634  f98a							; (January to December) and the year has a value between 0 (1984)
+    635  f98a							; and 255 (2239).  All corrections for leap years are made properly
+    636  f98a							; over this entire time span.
+    637  f98a
+    638  f98a		       f9 8a	   MIDNIGHT   EQU	*
+    639  f98a		       8d 43		      BSR	DAYS_IN_MONTH	; Before incrementing the day we must see how many
+    640  f98c							;  days there are in this month.
+    641  f98c							; This value will be returned in register B
+    642  f98c		       96 c5		      LDAA	DAY	; Now see what day of the month this is
+    643  f98e		       44		      LSRA		; Shift out the daylight saving flag
+    644  f98f		       11		      CBA		; See if we just ended the last day of a month
+    645  f990		       25 14		      BLO	INC_DAY	; If not then just increment the day normally
+    646  f992		       96 c8		      LDAA	MONTH	; If the month has just ended then increment the month
+    647  f994		       81 0c		      CMPA	#12	; When the month ends there is also the possibility that
+    648  f996		       25 0a		      BLO	INC_MONTH	;  the year has just ended
+    649  f998		       7c 00 9b 	      INC	YEAR	; Execute this instruction once each year at midnight on
+    650  f99b							;  December 31
+    651  f99b
+    652  f99b							;		     BEQ     *
+    653  f99b							; Wouldn't it be fun to actually put the above instruction into the
+    654  f99b							; program? I can just see it now......
+    655  f99b							; It is new years eve in the year 2239, and precisely at midnight,
+    656  f99b							; all around the world, everyone's HP clock thermometer suddenly
+    657  f99b							; goes dead! Since every copy of this listing has long since been
+    658  f99b							; lost, it will remain a mystery forever how this couild have happened.
+    659  f99b							;
+    660  f99b							; But seriously, what do we do when the last counter finally runs out?
+    661  f99b							; Do we simply set it become 1984 all over again? This would allow the
+    662  f99b							; corrections for leap year to be done properly for another 60 years
+    663  f99b							; until the year 2300. But what about the corrections for daylight
+    664  f99b							; saving time? The best soluition is to find a year between 1984 and
+    665  f99b							; 2239 which is the same as 2240 with respect to leap years and
+    666  f99b							; days of the week. As it happens, there are many years which meet
+    667  f99b							; these requirements, the earliest being 1992. Of course, the year
+    668  f99b							; will read incorrectly and it will still fail in the year 2300, but
+    669  f99b							; then you can't have everything.
+    670  f99b		       26 04		      BNE	NOT_ROLLOVER	; In any year except 2240, skip the next two instructions
+    671  f99d		       86 08		      LDAA	#1992-1984	; Reset the year to 1992
+    672  f99f		       97 9b		      STAA	YEAR
+    673  f9a1		       4f	   NOT_ROLLOVER CLRA		; Reset the month to January
+    674  f9a2		       4c	   INC_MONTH  INCA		; Increment the month value
+    675  f9a3		       97 c8		      STAA	MONTH	; Save the incremented value
+    676  f9a5		       4f		      CLRA		; Start the day counter over at day 1
+    677  f9a6		       4c	   INC_DAY    INCA		; Increment the day value
+    678  f9a7		       48		      LSLA		; Save it doubled form to leave room for the DST flag
+    679  f9a8		       97 c5		      STAA	DAY	; Save the incremented value
+    680  f9aa
+    681  f9aa							;; PAGE 17  CLOCK TIMER INTERRUPT SERVICING
+    682  f9aa
+    683  f9aa							; The last function to be performed by the clock interrupt is
+    684  f9aa							; the daily calculation of the average temperatures for that day and
+    685  f9aa							; the saving of those values as the previous day's averages, followed
+    686  f9aa							; by the re-initialization of today's averages and the updating of
+    687  f9aa							; all of the minimum and maximum values
+    688  f9aa
+    689  f9aa		       ce 00 cc 	      LDX	#TODAY_MEAN1	; Point to the sum of the values for zone 1
+    690  f9ad		       8d 48		      BSR	AVERAGE	; Convert this to an average value
+    691  f9af		       dd c3		      STD	LAST_MEAN1	; Save this as yesterday's average
+    692  f9b1		       ce 00 cf 	      LDX	#TODAY_MEAN2	; Do the same for the other two zones
+    693  f9b4		       8d 41		      BSR	AVERAGE
+    694  f9b6		       dd c6		      STD	LAST_MEAN2
+    695  f9b8		       ce 00 d2 	      LDX	#TODAY_MEAN3
+    696  f9bb		       8d 3a		      BSR	AVERAGE
+    697  f9bd		       dd c9		      STD	LAST_MEAN3
+    698  f9bf		       ce 00 12 	      LDX	#LAST_MIN1-TODAY_MIN1	; Now set yesterday's min and max values
+    699  f9c2							;  to today's - use X as a byte counter and also a pointer
+    700  f9c2		       a6 9e	   SET_LAST   LDAA	TODAY_MIN1-1,X	; Get one byte of today's data
+    701  f9c4		       a7 b0		      STAA	LAST_MIN1-1,X	; Copy it into the corresponding byte of
+    702  f9c6		       09		      DEX		;  yesterday's data and decrement the pointer/counter
+    703  f9c7		       26 f9		      BNE	SET_LAST	; Repeat until all bytes have been copied
+    704  f9c9		       7f 00 98 	      CLR	TIME_OF_DAY	; Reset the current time of day to midnight
+    705  f9cc		       8d 4f		      BSR	INIT_MINMAX	; Initialize the minimu, maximum and average values
+    706  f9ce		       3b	   IRQ_EXIT   RTI
+    707  f9cf
+    708  f9cf							;; PAGE 18 CLOCK TIMER INTERRUPT SERVICING
+    709  f9cf
+    710  f9cf							; Subroutine to find out how many days there are in a month
+    711  f9cf		       f9 cf	   DAYS_IN_MONTH EQU	*
+    712  f9cf		       d6 c8		      LDAB	MONTH	; See which month this is
+    713  f9d1		       ce f9 ea 	      LDX	#MONTH_TABLE-1	; Point to a lookup table of days in a month
+    714  f9d4		       3a		      ABX		; Index into the lookup table
+    715  f9d5		       e6 00		      LDAB	0,X	; Load the value from the table
+    716  f9d7		       c1 1c		      CMPB	#28	; See if this is February
+    717  f9d9		       26 0f		      BNE	RETURN_DAYS	; If it is not then this is the correct number of days
+    718  f9db		       96 9b		      LDAA	YEAR	; If it is then we must also see if this is a leap year
+    719  f9dd		       85 03		      BITA	#ACC0+ACC1	; By looking at just the last two bits in the year we
+    720  f9df		       26 09		      BNE	RETURN_DAYS	;  know whether or not it is divisible by four
+    721  f9e1		       81 74		      CMPA	#2100-1984	; If it is then we must also test for two such years
+    722  f9e3		       27 05		      BEQ	RETURN_DAYS	;  which will not be leap years - 2100 and 2200
+    723  f9e5		       81 d8		      CMPA	#2200-1984	; Oddly enough, the year 2000 is a leap year
+    724  f9e7		       27 01		      BEQ	RETURN_DAYS	; After eliminating all non leap years over this time
+    725  f9e9		       5c		      INCB		;  span, this leaves only leap years, for which February
+    726  f9ea							;  has 29 days
+    727  f9ea		       39	   RETURN_DAYS RTS		; Return with the number of days in the current month
+    728  f9eb							;  in register B
+    729  f9eb
+    730  f9eb		       f9 eb	   MONTH_TABLE EQU	*	; Lookup table of days in the month
+    731  f9eb		       1f		      DC	31	; January
+    732  f9ec		       1c		      DC	28	; February (may be 29)
+    733  f9ed		       1f		      DC	31	; March
+    734  f9ee		       1e		      DC	30	; April
+    735  f9ef		       1f		      DC	31	; May
+    736  f9f0		       1e		      DC	30	; June
+    737  f9f1		       1f		      DC	31	; July
+    738  f9f2		       1f		      DC	31	; August
+    739  f9f3		       1e		      DC	30	; September
+    740  f9f4		       1f		      DC	31	; October
+    741  f9f5		       1e		      DC	30	; November
+    742  f9f6		       1f		      DC	31	; December
+    743  f9f7
+    744  f9f7							;; PAGE 19 - CLOCK TIMER INTERRUPT SERVICING
+    745  f9f7
+    746  f9f7							; Subroutine to calculate the average value from the sum of the
+    747  f9f7							; values and the number of values summed.
+    748  f9f7		       f9 f7	   AVERAGE    EQU	*
+    749  f9f7		       86 11		      LDAA	#17	; Go through the divide loop 17 times but only save 16 bits
+    750  f9f9							;  of quotient
+    751  f9f9		       36		      PSHA		; Push the counter byte onto the stack
+    752  f9fa		       a6 02		      LDAA	2,X	; X points to the sum, so 2,x is the third byte of the sum
+    753  f9fc		       36		      PSHA		; Use another stack location for this byte
+    754  f9fd		       ec 00		      LDD	0,X	; Now load the first two bytes of the sum
+    755  f9ff		       30		      TSX		; Make X now point to the two bytes which were placed on the stack
+    756  fa00		       0c		      CLC		; Clear the carry to prevent A 1 from getting shifted in below
+    757  fa01		       69 00	   AVG_DIVIDE ROL	0,X	; Shift the quotient and remainder left one bit
+    758  fa03		       59		      ROLB		; The lowest of these three bytes is on the stack, then other
+    759  fa04		       49		      ROLA		;  two in B and A
+    760  fa05		       25 04		      BCS	SUBTRACT	; If a non-zero bit of the remainder shifts out the top
+    761  fa07							;  then force a subtraction
+    762  fa07		       91 9e		      CMPA	MEAN_COUNT	; Otherwise decide whether or not to subtract based
+    763  fa09		       25 03		      BLO	NO_SUBTRACT	;  on whther the remainder is greater or less than
+    764  fa0b							;  the number being divided by, the number of summed values
+    765  fa0b		       90 9e	   SUBTRACT   SUBA	MEAN_COUNT	; Every time the remainder is large enough,
+    766  fa0d		       0c		      CLC		;  subtract the divisor and shift in a zero for the quotient
+    767  fa0d		       fa 0e	   NO_SUBTRACT EQU	*	; Every time it is too small, shift in a one
+    768  fa0e		       6a 01		      DEC	1,X	; See if 17 passes have been made through the above loop
+    769  fa10		       26 ef		      BNE	AVG_DIVIDE	; Repeat until done
+    770  fa12							; After 17 passes, the 16 bit quotient is in B and the top byte of
+    771  fa12							; the stack, in complemented form, and the seventeenth bit of the
+    772  fa12							; quotient, also complemented, is in the carry flag
+    773  fa12		       17		      TBA		; Move the first byte of quotient to register A
+    774  fa13		       33		      PULB		; Move the second byte to B
+    775  fa14		       31		      INS		; Discard the counter from the stack
+    776  fa15		       25 03		      BCS	NO_CARRY	; Use the next bit of the quotient for rounding
+    777  fa17		       83 00 01 	      SUBD	#1	; At this point all bits are still complemented so the
+    778  fa1a							;  'branch if carry clear' and 'increment double' instructions
+    779  fa1a							;  are instead 'branch if carry set' and 'decrement double'
+    780  fa1a		       43	   NO_CARRY   COMA		; Finally convert the rounded qoutient from complemented to
+    781  fa1b		       53		      COMB		;  true form and return
+    782  fa1c		       39		      RTS
+    783  fa1d
+    784  fa1d							;; PAGE 20 CLOCK TIMER INTERRUPT SERVICING
+    785  fa1d
+    786  fa1d							; Subroutine to initialize today's minimum, maximum, and mean values
+    787  fa1d
+    788  fa1d		       fa 1d	   INIT_MINMAX EQU	*
+    789  fa1d		       dc 8d		      LDD	CONV_BUF	; Take the current values of the zones
+    790  fa1f		       dd cd		      STD	TODAY_MEAN1+1	; Initialize the sum, the minimum, and the maximum
+    791  fa21		       dd 9f		      STD	TODAY_MIN1	;  to this value
+    792  fa23		       dd a8		      STD	TODAY_MAX1
+    793  fa25		       dc 90		      LDD	CONV_BUF+3
+    794  fa27		       dd d0		      STD	TODAY_MEAN2+1
+    795  fa29		       dd a2		      STD	TODAY_MIN2
+    796  fa2b		       dd ab		      STD	TODAY_MAX2
+    797  fa2d		       dc 93		      LDD	CONV_BUF+6
+    798  fa2f		       dd d3		      STD	TODAY_MEAN3+1
+    799  fa31		       dd a5		      STD	TODAY_MIN3
+    800  fa33		       dd ae		      STD	TODAY_MAX3
+    801  fa35		       96 98		      LDAA	TIME_OF_DAY	; Initialize the time of the min and max of each zone
+    802  fa37							;  to the current time
+    803  fa37		       97 a1		      STAA	TODAY_MIN1+2
+    804  fa39		       97 aa		      STAA	TODAY_MAX1+2
+    805  fa3b		       97 a4		      STAA	TODAY_MIN2+2
+    806  fa3d		       97 ad		      STAA	TODAY_MAX2+2
+    807  fa3f		       97 a7		      STAA	TODAY_MIN3+2
+    808  fa41		       97 b0		      STAA	TODAY_MAX3+2
+    809  fa43		       4f		      CLRA		; Initialize the highest byte of each sum to zero
+    810  fa44		       97 cc		      STAA	TODAY_MEAN1
+    811  fa46		       97 cf		      STAA	TODAY_MEAN2
+    812  fa48		       97 d2		      STAA	TODAY_MEAN3
+    813  fa4a		       4c		      INCA		; Set the number of values that have been summed so far this
+    814  fa4b		       97 9e		      STAA	MEAN_COUNT	;  to one
+    815  fa4d		       39		      RTS
+    816  fa4e
+    817  fa4e							;; PAGE 21 DISPLAY MODE ROUTINES
+    818  fa4e
+    819  fa4e							; Main Program
+    820  fa4e							; The main program consists basically of four mode routines. The
+    821  fa4e							; primary mode routine is the display routine. The one in which each
+    822  fa4e							; of the pieces of information is individually displayed and selected
+    823  fa4e							; by processing the three buttons.  Next there is the alternate display
+    824  fa4e							; routine in which several pices of information are displayed
+    825  fa4e							; alternately over a period of several seconds. Then there is the
+    826  fa4e							; set mode in which setpoints are entered for several parameters,
+    827  fa4e							; such as the time and date.  Finally, there is a diagnostic mode in
+    828  fa4e							; which information aobut the functioning of the hardware itself
+    829  fa4e							; can be displayed. To go from the display routine to any of the
+    830  fa4e							; others requires that two keys be pressed simultaneously.
+    831  fa4e
+    832  fa4e							; DISPLAY ROUTINE
+    833  fa4e
+    834  fa4e		       fa 4e	   DISPLAY_MODE EQU	*	; This is the main mode of operation of this
+    835  fa4e							;  instrument. It is used to display any of 68 different pieces of
+    836  fa4e							;  information one at a time.	The information is selected by pressing
+    837  fa4e							;  the tree front panel switches one at a time to specify three
+    838  fa4e							;  identifiers of the information to be displayed. First there is
+    839  fa4e							;  switch 1, which specifies whether the information is a centegrade
+    840  fa4e							;  temperature, fahrenheit temperature, a time of date or a date.
+    841  fa4e							;  Next, switch 2 specifies whether the information refers to
+    842  fa4e							;  temperature zones 1, 2 or 3. Finally, switch 3 specifies whether
+    843  fa4e							;  the information is the current value, the maximum or minimum
+    844  fa4e							;  value so far today, the mean value so far today, or yesterday's
+    845  fa4e							;  maximum, minimum or mean.
+    846  fa4e		       dc d5		      LDD	DISP_SELECT	; Get the 2 byte value which specifies the
+    847  fa50							;  information to be displayed
+    848  fa50		       bd fc 12 	      JSR	BACKGROUND	; Format and display the information
+    849  fa53							; This major routine does much more than just format display data
+    850  fa53							;  and read the keyboard, which is the last thing it does
+    851  fa53							;  before returning
+    852  fa53		       44		      LSRA		; The keyboard is returned in the low 3 bits of A
+    853  fa54		       25 21		      BCS	INC_SW1	; If bit 0 was set then switch 1 was just pressed
+    854  fa56		       44		      LSRA		; If switch 1 was not just pressed then see if switch 2 was
+    855  fa57		       25 12		      BCS	INC_SW2	; If bit 1 was set then switch 2 was just pressed
+    856  fa59		       27 f3		      BEQ	DISPLAY_MODE	; If switches 1 and 2 were not pressed and bit 2
+    857  fa5b							;  is also zero then none of the switches was pressed, so
+    858  fa5b							;  just continue to display the same information
+    859  fa5b							; If bit 2 is set then increment the switch 3 selection bits
+    860  fa5b
+    861  fa5b							; PAGE 22 DISPLAY MODE ROUTINES
+    862  fa5b
+    863  fa5b							; Increment the switch 3 selection bitts
+    864  fa5b		       96 d5		      LDAA	DISP_SELECT	; This byte contains the selection bits for both
+    865  fa5d							;  switch 1 and switch 3
+    866  fa5d		       8b 04		      ADDA	#ACC2	; Leave the two low bits alone and increment the next 3 bits
+    867  fa5f		       81 1c		      CMPA	#7*ACC2	; See if these bits have reached a value of 7
+    868  fa61		       25 02		      BLO	NOT7	; If they have then
+    869  fa63		       84 03		      ANDA	#ACC0+ACC1	;  start them over again at zero
+    870  fa65		       84 fd	   NOT7       ANDA	#$FF-ACC1	; If the mode is time or date then set it to C or F
+    871  fa67		       97 d5		      STAA	DISP_SELECT	; Return the selection bits
+    872  fa69		       20 e3		      BRA	DISPLAY_MODE	; Repeat the loop with the new select bits
+    873  fa6b
+    874  fa6b							; Increment the switch 2 selection bits
+    875  fa6b		       fa 6b	   INC_SW2    EQU	*	; Increment the zone selection bits
+    876  fa6b		       d6 d6		      LDAB	ZONE_SELECT	; Get the current value of these bits
+    877  fa6d		       5c		      INCB		; Increment to the next value
+    878  fa6e		       c1 02		      CMPB	#2	; See if we have incremented past the last zone
+    879  fa70		       23 01		      BLS	IS_LESS	; If we have then
+    880  fa72		       5f		      CLRB		;  start over at zone 1
+    881  fa73		       d7 d6	   IS_LESS    STAB	ZONE_SELECT	; Save the new value
+    882  fa75		       20 d7		      BRA	DISPLAY_MODE	; Repeat the loop with the new select bits
+    883  fa77
+    884  fa77							; Increment the switch 1 selection bits
+    885  fa77		       fa 77	   INC_SW1    EQU	*	; Increment the data type selection bits
+    886  fa77		       d6 d5		      LDAB	DISP_SELECT	; Get the current value of these bits
+    887  fa79		       5c	   SKIP_MODE  INCB		; Increment to the next value
+    888  fa7a		       c5 03		      BITB	#ACC0+ACC1	; See if they have been incremented to zero
+    889  fa7c		       27 16		      BEQ	TO_C	; If they have then go cancel out the carry into the upper bits
+    890  fa7e		       c5 02		      BITB	#ACC1	; If not zero then are they 01 (Fahrenheit)
+    891  fa80		       27 14		      BEQ	TO_F	; If so then just save the new value
+    892  fa82		       c5 fc		      BITB	#$FF-ACC0-ACC1	; See if we are reading current value
+    893  fa84		       27 10		      BEQ	TO_F	; If we are then this is legal for both date and time
+    894  fa86		       c5 01		      BITB	#ACC0	; If not current then see if we are set to date
+    895  fa88		       26 ef		      BNE	SKIP_MODE	; If so then the combination is illegal, go to the next
+    896  fa8a		       c1 0e		      CMPB	#3*ACC2+2	; For time the only illegal combinations are today's
+    897  fa8c		       27 eb		      BEQ	SKIP_MODE	;  mean and yesterday's mean
+    898  fa8e		       c1 1a		      CMPB	#6*ACC2+2
+    899  fa90		       27 e7		      BEQ	SKIP_MODE
+    900  fa92		       20 02		      BRA	TO_F	; Otherwise save this value as is
+    901  fa94
+    902  fa94		       c0 04	   TO_C       SUBB	#4	; Cancel the carry from the low bits
+    903  fa96		       d7 d5	   TO_F       STAB	DISP_SELECT	; Save the new value of the bits
+    904  fa98		       20 b4		      BRA	DISPLAY_MODE	; Repeat the loop with the new select bits
+    905  fa9a
+    906  fa9a							;; PAGE 23 DISPLAY MODE ROUTINES
+    907  fa9a
+    908  fa9a							; Alternate display routine
+    909  fa9a		       fa 9a	   ALT_MODE   EQU	*	; This is a display mode in which two or more pieces
+    910  fa9a							;  of information can be displayed in sequence at intervals of a few
+    911  fa9a							;  seconds. The mode is initially entered by pressing both S1 and S2
+    912  fa9a							;  simultaneously. While in this mode the action of the three switches
+    913  fa9a							;  is modified. S1 is now used to step more quickly through the
+    914  fa9a							;  display sequence, or to hold the display on a particular value by
+    915  fa9a							;  holding the switch in.  S2 is used to select a different zone to
+    916  fa9a							;  be displayed while on either degrees C or degrees F. S3 is used
+    917  fa9a							;  to exit from this mode and return to normal display mode.
+    918  fa9a		       dc d5		      LDD	DISP_SELECT	; Display the currently selected item
+    919  fa9c		       bd fc 12 	      JSR	BACKGROUND	;  and read the keyboard
+    920  fa9f		       44		      LSRA		; See if switch 1 was just pressed
+    921  faa0		       25 14		      BCS	ADVANCE_ALT	; If it was then advance to the next display item
+    922  faa2		       44		      LSRA		; See if switch 2 was just pressed
+    923  faa3		       25 2c		      BCS	ALT_ZONE	; If it was then advance to the next zone
+    924  faa5		       44		      LSRA		; See if switch 3 was just pressed
+    925  faa6		       25 a6		      BCS	DISPLAY_MODE	; If it was then exit from this mode
+    926  faa8		       c5 01		      BITB	#ACC0	; If nothing just pressed then is switch 1 being held in
+    927  faaa		       26 ee		      BNE	ALT_MODE	; If it is then hold the display on this item
+    928  faac		       96 92	   ADVANCE_YET LDAA	TWENTIETHS	; See if it is time to advance the item
+    929  faae		       81 31		      CMPA	#49
+    930  fab0		       27 04		      BEQ	ADVANCE_ALT
+    931  fab2		       81 6d		      CMPA	#109
+    932  fab4		       26 e4		      BNE	ALT_MODE
+    933  fab4		       fa b6	   ADVANCE_ALT EQU	*	; Three seconds have elapsed
+    934  fab6		       96 d5		      LDAA	DISP_SELECT	; Get the corrent select bits
+    935  fab8		       4c		      INCA		; Advance to the next item
+    936  fab9		       84 03	   VALIDATE_ALT ANDA	#3	; Allow current values only
+    937  fabb		       97 d5		      STAA	DISP_SELECT	; Put back the new select bits
+    938  fabd		       d6 cb		      LDAB	ALT_SELECT	; See which items are selected for alternate display
+    939  fabf		       58		      LSLB		; only the low 4 bits are used, one for each item
+    940  fac0		       58		      LSLB
+    941  fac1		       58		      LSLB
+    942  fac2		       58		      LSLB
+    943  fac3		       27 18		      BEQ	BAD_ALT	; If none of these bits is set then set some, so that we
+    944  fac5							;  cannot accidentally get hung up here forever
+    945  fac5		       58	   TEST_ALT   LSLB		; Shift the first select bit into the carry
+    946  fac6		       4a		      DECA		; See if this is the right bit to test
+    947  fac7		       2a fc		      BPL	TEST_ALT	; No, not yet - look at the next bit
+    948  fac9		       24 eb		      BCC	ADVANCE_ALT	; If this item is not enabled then try the next one
+    949  facb		       20 cd		      BRA	ALT_MODE	; Otherwise go ahead and display this item
+    950  facd
+    951  facd		       96 d5	   ENTER_ALT  LDAA	DISP_SELECT	; Enter this mode here to immediately start
+    952  facf		       20 e8		      BRA	VALIDATE_ALT	;  displaying a valid mode
+    953  fad1
+    954  fad1							;; PAGE 24 DISPLAY MODE ROUTINES
+    955  fad1
+    956  fad1							; Select the next zone while in alternate display mode
+    957  fad1		       96 d6	   ALT_ZONE   LDAA	ZONE_SELECT	; Select the next mode
+    958  fad3		       4c		      INCA
+    959  fad4		       81 03		      CMPA	#3	; See if we have passed zone 3
+    960  fad6		       25 01		      BLO	NOT_THREE
+    961  fad8		       4f		      CLRA		; If so then drop back to zone 1
+    962  fad9		       97 d6	   NOT_THREE  STAA	ZONE_SELECT
+    963  fadb		       20 cf		      BRA	ADVANCE_YET	; Now execute the remainder of the above routine
+    964  fadd
+    965  fadd		       7a 00 cb    BAD_ALT    DEC	ALT_SELECT	; If noe of the select bits were set then
+    966  fae0							;  set them all
+    967  fae0		       20 b8		      BRA	ALT_MODE	; Go ahead and display the current one
+    968  fae2
+    969  fae2							;; PAGE 25 DISPLAY MODE ROUTINES
+    970  fae2
+    971  fae2							; Set time and date routine
+    972  fae2		       fa e2	   SET_MODE   EQU	*	; This is a display mode in which the time and date
+    973  fae2							;  settings can be adjusted.  The mode is initially entered by pressing
+    974  fae2							;  both s1 and s3 simultaneiously. Whiel in this mode S1 selects the
+    975  fae2							;  next setting to be adjusted, S2 increments its value and S3
+    976  fae2							;  decrements it.  After the last setting has been displayed and
+    977  fae2							;  possibly adjusted, pressing s1 one more time returns to normal
+    978  fae2							;  display mode.
+    979  fae2		       cc 07 0b 	      LDD	#$070B	; Special select value to display the year and suppress
+    980  fae5							;  other indicator lights
+    981  fae5		       bd fc 12 	      JSR	BACKGROUND	; Display the current year setpoint and read the keyboard
+    982  fae8		       44		      LSRA		; See if switch 1 was pressed
+    983  fae9		       25 10		      BCS	SET_MONTH	; If it was then leave the year and on to the month
+    984  faeb		       44		      LSRA		; See if switch 2 was pressed
+    985  faec		       25 08		      BCS	INC_YEAR	; If it was then increment the year
+    986  faee		       44		      LSRA		; See if switch 3 was pressed
+    987  faef		       24 f1		      BCC	SET_MODE	; If none pressed, stay in this mode
+    988  faf1		       7a 00 9b 	      DEC	YEAR	; If switch 3 was pressed the decrement the year
+    989  faf4		       20 ec		      BRA	SET_MODE	; Stay in this mode
+    990  faf6
+    991  faf6		       7c 00 9b    INC_YEAR   INC	YEAR	; If switch 2 was pressed then increment the year
+    992  faf9		       20 e7		      BRA	SET_MODE	; Stay in this mode
+    993  fafb
+    994  fafb		       fa fb	   SET_MONTH  EQU	*	; Once the year is set, display and adjust the month
+    995  fafb		       cc 03 3b 	      LDD	#$033B	; Special select value to display the month and suppress
+    996  fafe							;  the day and indicator lights
+    997  fafe		       bd fc 12 	      JSR	BACKGROUND	; Display the current month setpoint and read the keyboard
+    998  fb01		       d6 c8		      LDAB	MONTH	; Get the current month setpoint for possible modification
+    999  fb03		       c0 0b		      SUBB	#11	; Subtract 11 in case we will want to add 1
+   1000  fb05		       44		      LSRA		; See if switch 1 was pressed
+   1001  fb06		       25 11		      BCS	SET_DAY	; If it was then leave the month and go on to the day
+   1002  fb08		       44		      LSRA		; See if switch 2 was pressed
+   1003  fb09		       25 05		      BCS	INC_MONTH_SET	; If it was then increment the month
+   1004  fb0b		       44		      LSRA		; See if switch 3 was pressed
+   1005  fb0c		       24 ed		      BCC	SET_MONTH	; If none pressed, stay in this mode
+   1006  fb0e		       cb 0a		      ADDB	#10	; If switch 3 was pressed then add back all but one of the
+   1007  fb10							;  11 that were subtracted above, to give a net decrement by 1
+   1008  fb10		       5d	   INC_MONTH_SET TSTB		; After subtracting either 1 or 11, see if the
+   1009  fb11		       2e 02		      BGT	SAVE_MONTH	;  month is less than 1
+   1010  fb13		       cb 0c		      ADDB	#12	; If it is then add 12 to bring it back in the range 1 to 12
+   1011  fb15		       d7 c8	   SAVE_MONTH STAB	MONTH	; Save the new month setpoint
+   1012  fb17		       20 e2		      BRA	SET_MONTH	; Stay in this mode
+   1013  fb19
+   1014  fb19							;; PAGE 26 DISPLAY MODE ROUTINES
+   1015  fb19
+   1016  fb19		       fb 19	   SET_DAY    EQU	*	; Once the month is set, display and adjust the day
+   1017  fb19		       bd f9 cf 	      JSR	DAYS_IN_MONTH	; First see that the day is valid for the current
+   1018  fb1c		       96 c5		      LDAA	DAY	;  month setpoint [bill: days in month in register B]
+   1019  fb1e		       44		      LSRA		; Delete the daylight saving time flag
+   1020  fb1f		       27 19		      BEQ	SAVE_DAY	; If the day is zero then set the day to last of month
+   1021  fb21		       10		      SBA		; If it is greater than allowed then subtract the number of days
+   1022  fb22		       16		      TAB		;  in this month
+   1023  fb23		       2e 15		      BGT	SAVE_DAY	; Save the difference if it is greater than zero
+   1024  fb25		       cc 03 cb 	      LDD	#$03CB	; Special select value to display the day and suppress
+   1025  fb28							;  the month and indicator lights
+   1026  fb28		       bd fc 12 	      JSR	BACKGROUND	; Display the current day setpoint and read the keyboard
+   1027  fb2b		       d6 c5		      LDAB	DAY	; Get the current day setpoint and read the keyboard
+   1028  fb2d		       54		      LSRB		; Delete the daylight saving flag
+   1029  fb2e		       44		      LSRA		; See if switch 1 was pressed
+   1030  fb2f		       25 0e		      BCS	SET_HOUR	; If it was then leave the day and go to the hour
+   1031  fb31		       44		      LSRA		; See if switch 2 was pressed
+   1032  fb32		       25 05		      BCS	INC_DAY_SET	; If it was then increment the day
+   1033  fb34		       44		      LSRA		; See if switch 3 was pressed
+   1034  fb35		       24 e2		      BCC	SET_DAY	; If none pressed, stay in this mode
+   1035  fb37		       5a		      DECB		; If switch 3 was pressed then decrement the day
+   1036  fb38							; If it decrements to zero then it will be changed to
+   1037  fb38							;  the last day in the month above
+   1038  fb38		       5a		      DECB		; Decrement a second time to cancel the increment below
+   1039  fb39		       5c	   INC_DAY_SET INCB		; Increment to the next day
+   1040  fb3a							; If it increments past the last valid day then
+   1041  fb3a							;  it will get set to day one above
+   1042  fb3a		       58	   SAVE_DAY   LSLB		; Shift in a zero for daylight saving flag
+   1043  fb3b		       d7 c5		      STAB	DAY
+   1044  fb3d		       20 da		      BRA	SET_DAY	; Stay in this mode
+   1045  fb3f
+   1046  fb3f		       fb 3f	   SET_HOUR   EQU	*	; Once the day is set, display and adjust the hour.
+   1047  fb3f		       cc 02 3b 	      LDD	#$023B	; Special select value to display the hour and suppress
+   1048  fb42		       bd fc 12 	      JSR	BACKGROUND	;  the minutes and indicator lights.
+   1049  fb45							;  return after reading the keyboard
+   1050  fb45		       d6 98		      LDAB	TIME_OF_DAY	; Get the current time for possible modification
+   1051  fb47							;  [bill: represented as units of 10 minutes]
+   1052  fb47		       44		      LSRA		; See if switch 1 was pressed
+   1053  fb48		       25 1d		      BCS	SET_TEN_MINUTE	; If it was then leave the hour and go on to the
+   1054  fb4a							;  tens of minutes
+   1055  fb4a		       44		      LSRA		; See if switch 2 was pressed
+   1056  fb4b		       25 0b		      BCS	INC_HOUR	; If it was then increment the hour
+   1057  fb4d		       44		      LSRA		; See if switch 2 was pressed
+   1058  fb4e		       24 ef		      BCC	SET_HOUR	; If none pressed, stay in this mode
+   1059  fb50		       c0 06		      SUBB	#6	; If switch 3 was pressed then decrement the hour
+   1060  fb52		       24 0c		      BHS	SAVE_HOUR	; As long as this does not go below zero, save it
+   1061  fb54		       cb 90		      ADDB	#24*6	; If it goes below zero then add 24 hours
+   1062  fb56		       20 08		      BRA	SAVE_HOUR
+   1063  fb58
+   1064  fb58		       cb 06	   INC_HOUR   ADDB	#6	; If switch 2 was pressed then increment the hour
+   1065  fb5a		       c1 90		      CMPB	#24*6	; Make sure this does not go above 24 hours
+   1066  fb5c		       25 02		      BLO	SAVE_HOUR	; If it doesn't then save it
+   1067  fb5e		       c0 90		      SUBB	#24*6	; If it goes above 24 hours then subtract 24 hours
+   1068  fb60		       d7 98	   SAVE_HOUR  STAB	TIME_OF_DAY	; Save the modified hour
+   1069  fb62		       bd fa 1d 	      JSR	INIT_MINMAX	; Whenever then time of day is changed, reset the
+   1070  fb65							;; PAGE 27
+   1071  fb65							;  minimum, maximum, and average values
+   1072  fb65		       20 d8		      BRA	SET_HOUR	; Stay in this mode
+   1073  fb67
+   1074  fb67							;; PAGE 28
+   1075  fb67
+   1076  fb67		       fb 67	   SET_TEN_MINUTE EQU	*	; Once the hour is set, display and adjust the
+   1077  fb67							;  tens of minutes
+   1078  fb67		       cc 02 db 	      LDD	#$02DB	; Special select value to display the tens of minutes and
+   1079  fb6a		       bd fc 12 	      JSR	BACKGROUND	;  suppress the hours and minutes and indicator lights.
+   1080  fb6d							;  return after reading the keyboard
+   1081  fb6d		       d6 98		      LDAB	TIME_OF_DAY	; Get the current time for possible modification
+   1082  fb6f		       c0 06	   DIV_BY_6   SUBB	#6	; Divide by six and save the remainder to show tens of minutes
+   1083  fb71		       24 fc		      BHS	DIV_BY_6	; When done, this will be a value from -1 to -6
+   1084  fb73							; [bill: this removes whole hours leaving just 10-minute units]
+   1085  fb73		       44		      LSRA		; See if switch 1 was pressed
+   1086  fb74		       25 20		      BCS	SET_MINUTE	; If it was then leave the tens of minutes and go on
+   1087  fb76							;  to the minutes
+   1088  fb76		       44		      LSRA		; See if switch 2 was pressed
+   1089  fb77		       25 0d		      BCS	INC_TENS	; If it was then increment the tens of minutes
+   1090  fb79		       44		      LSRA		; See if switch 3 was pressed
+   1091  fb7a		       24 eb		      BCC	SET_TEN_MINUTE	; If none pressed, stay in this mode
+   1092  fb7c		       86 ff		      LDAA	#-1	; If switch 3 was pressed then decrement the tens of minutes
+   1093  fb7e		       c1 fa		      CMPB	#-6	; Check the tens of minutes
+   1094  fb80		       26 0b		      BNE	ADJ_TENS	; Unless the tens digit was zero, decrement it
+   1095  fb82		       86 05		      LDAA	#5	; If it was zero then add five to it
+   1096  fb84		       20 07		      BRA	ADJ_TENS
+   1097  fb86
+   1098  fb86		       86 01	   INC_TENS   LDAA	#1	; If switch 2 was pressed then increment the tens
+   1099  fb88		       5c		      INCB		;  check the tens of minutes
+   1100  fb89		       26 02		      BNE	ADJ_TENS	; Unless the tens digit was five, increment it
+   1101  fb8b		       86 fb		      LDAA	#-5	; If it was five then subtract five from it
+   1102  fb8d		       9b 98	   ADJ_TENS   ADDA	TIME_OF_DAY	; [bill: A has delta to full time; B had just 10-minutes]
+   1103  fb8f		       97 98		      STAA	TIME_OF_DAY	; Put back the adjusted time
+   1104  fb91		       bd fa 1d 	      JSR	INIT_MINMAX	; Every time the hour or minute is changed, reset
+   1105  fb94							;  the minimum and maximum and mean values
+   1106  fb94		       20 d1		      BRA	SET_TEN_MINUTE	; Stay in this mode
+   1107  fb96
+   1108  fb96							;; PAGE 29
+   1109  fb96		       fb 96	   SET_MINUTE EQU	*	; Once the tens of minutes are set, set the minutes
+   1110  fb96		       cc 02 eb 	      LDD	#$02EB	; Special select value to display the minutes and suppress
+   1111  fb99		       8d 77		      BSR	BACKGROUND	;  the hours and tens of minutes.
+   1112  fb9b							;  return after reading the keyboard
+   1113  fb9b		       44		      LSRA		; See if switch 1 has been pressed
+   1114  fb9c		       25 27		      BCS	SET_ALT	; If it has then leave the minutes unchanged an go on
+   1115  fb9e							;  to modify the alternate display mode selection setpoint
+   1116  fb9e		       85 03		      BITA	#ACC0+ACC1	; See if either switch 2 or switch 3 has been pressed
+   1117  fba0		       27 f4		      BEQ	SET_MINUTE	; As long as neither of them has been pressed, let
+   1118  fba2							;  the clock keep running
+   1119  fba2		       d6 95	   MOD_MINUTE LDAB	TENTHS	; Get the current minutes for possible change
+   1120  fba4		       44		      LSRA		; See if switch 2 was pressed
+   1121  fba5		       25 07		      BCS	INC_MINUTE	; If it was then increment the minutes
+   1122  fba7		       44		      LSRA		; See if switch 3 was pressed
+   1123  fba8		       24 0c		      BCC	HOLD_MINUTE	; If not then just hold the time at its present value
+   1124  fbaa		       cb 90		      ADDB	#$90	; Decrement the upper digit of this BCD value
+   1125  fbac		       20 02		      BRA	SKIP_INC	; Skip the increment in the next line
+   1126  fbae		       cb 10	   INC_MINUTE ADDB	#$10	; Increment the upper digit of this BCD value
+   1127  fbb0		       17	   SKIP_INC   TBA		; Copy it into register A to decimal adjust the value
+   1128  fbb1		       19		      DAA
+   1129  fbb2		       84 f0		      ANDA	#$F0	; Set the tenths of miutes digit to zero
+   1130  fbb4
+   1131  fbb4		       97 95		      STAA	TENTHS	; Save the modified minutes value
+   1132  fbb6
+   1133  fbb6							; original binary, instead of 'CLR TWENTIETHS':
+   1134  fbb6							; fbb6 86 78  HOLD_MINUTE  LDAA #$78
+   1135  fbb6							; fbb8 97 92		    STAA $92 (TWENTIETHS)
+   1136  fbb6
+   1137  fbb6		       86 78	   HOLD_MINUTE LDAA	#$78
+   1138  fbb8		       97 92		      STAA	TWENTIETHS
+   1139  fbba
+   1140  fbba							; June 1984 listing:
+   1141  fbba							; HOLD_MINUTE	       CLR     TWENTIETHS      ; Clear the lower bits of the time to keep
+   1142  fbba							;					       ;  it set exactly to the minute - also keeps the
+   1143  fbba							;  colon from flashing in the display
+   1144  fbba		       cc 02 eb 	      LDD	#$02EB	; Special select value to display the minutes and suppress
+   1145  fbbd		       8d 53		      BSR	BACKGROUND	;  the hours and tens of minutes
+   1146  fbbf							;  return after reading the keyboard
+   1147  fbbf		       44		      LSRA		; See if switch 1 was pressed
+   1148  fbc0		       24 e0		      BCC	MOD_MINUTE	; If not they stay in this mode and hold the time
+   1149  fbc2							;  where it is
+   1150  fbc2		       7e fa 4e    EXIT_SET   JMP	DISPLAY_MODE	; On exiting from this mode, return
+   1151  fbc5							;  to normal display mode
+   1152  fbc5							;; PAGE 30
+   1153  fbc5
+   1154  fbc5		       fb c5	   SET_ALT    EQU	*	; If no change was made to the minutes then display
+   1155  fbc5							;  and adjust the alternate display mode selection setponit
+   1156  fbc5		       86 a0		      LDAA	#$A0	; Special select value to display the alternate mode
+   1157  fbc7		       8d 49		      BSR	BACKGROUND	;  selection setpoint.
+   1158  fbc9							;  return after reading keyboard
+   1159  fbc9		       d6 cb		      LDAB	ALT_SELECT	; Get the current value of the setpoint just in case
+   1160  fbcb		       44		      LSRA		; See if switch 1 was pressed
+   1161  fbcc		       25 f4		      BCS	EXIT_SET	; If it was then leave this mode and return to normal
+   1162  fbce							;  display mode
+   1163  fbce		       44		      LSRA		; See if switch 2 was pressed
+   1164  fbcf		       25 0a		      BCS	INC_ALT	; If it was then go to the next select value
+   1165  fbd1		       44		      LSRA		; See if switch 3 was pressed
+   1166  fbd2		       24 f1		      BCC	SET_ALT	; If none pressed then stay in this mode
+   1167  fbd4		       5a	   DEC_ALT    DECB		; If switch 3 was pressed then go to the previous value
+   1168  fbd5		       8d 0d		      BSR	VALID_ALT	; See if this is a valid selection setpoint
+   1169  fbd7		       27 fb		      BEQ	DEC_ALT	; If not then go back another one
+   1170  fbd9		       20 05		      BRA	SAVE_ALT	; When a valid one is found, save it
+   1171  fbdb
+   1172  fbdb		       5c	   INC_ALT    INCB		; If switch 2 was pressed then go to the next value
+   1173  fbdc		       8d 06		      BSR	VALID_ALT	; See if this is a valud selection setpoint
+   1174  fbde		       27 fb		      BEQ	INC_ALT	; If not then go forward another one
+   1175  fbe0		       d7 cb	   SAVE_ALT   STAB	ALT_SELECT	; Once a valid one is found, save it
+   1176  fbe2		       20 e1		      BRA	SET_ALT	; Stay in this mode
+   1177  fbe4
+   1178  fbe4		       c4 0f	   VALID_ALT  ANDB	#$0F	; Clear the upper for bits in case they get set
+   1179  fbe6		       27 05		      BEQ	INVALID_ALT	; A value of zero is invalid, return equal
+   1180  fbe8		       37		      PSHB		; Save the lower 4 bits
+   1181  fbe9		       54	   TEST_ALT_BIT LSRB		; Look for the first non-zero bit
+   1182  fbea		       24 fd		      BCC	TEST_ALT_BIT	; Keep shifting until it is found
+   1183  fbec		       33		      PULB		; At this point, if the rest of the byte is zero then this is
+   1184  fbed							;  not a valid selection setpoint, so return equal
+   1185  fbed							; If the rest of the byte is not zero then it is
+   1186  fbed							;  valid, so return not equal
+   1187  fbed		       39	   INVALID_ALT RTS
+   1188  fbee
+   1189  fbee							;; PAGE 31
+   1190  fbee
+   1191  fbee							; Diagnostics routine
+   1192  fbee
+   1193  fbee		       fb ee	   DIAG_MODE  EQU	*	; This is a display routine in which various pieces of
+   1194  fbee							;  information needed only for diagnostic purposes can
+   1195  fbee							;  be accessed.  At present this consists of access to
+   1196  fbee							;  the contents of all the RAM locations.
+   1197  fbee		       d6 80		      LDAB	RAM_PTR	; Load the address of the RAM location to display
+   1198  fbf0		       c4 7f		      ANDB	#$7F	; Make sure it is pointing to one of the 128 RAM bytes
+   1199  fbf2		       d7 80		      STAB	RAM_PTR	; Save the pointer with the MSB clear
+   1200  fbf4		       86 90		      LDAA	#$90	; Special select value to display ram address and contents
+   1201  fbf6							;  in hex, two digits each
+   1202  fbf6		       c1 08		      CMPB	#$08	; At address 0x88, display 8.8.:8.8. and all indicator lights
+   1203  fbf8		       26 03		      BNE	NOT_88	;  turned on
+   1204  fbfa		       cc c0 00 	      LDD	#$C000
+   1205  fbfd		       8d 13	   NOT_88     BSR	BACKGROUND
+   1206  fbff		       44		      LSRA		; See if switch 1 was pressed
+   1207  fc00		       25 c0		      BCS	EXIT_SET	; If it was then exit from diagnostic mode
+   1208  fc02		       44	   DIAG_UP_DOWN LSRA		; See if switch 2 was pressed
+   1209  fc03		       25 08		      BCS	INC_DIAG	; If it was then increment the RAM address
+   1210  fc05		       44		      LSRA		; See if swtch 3 was pressed
+   1211  fc06		       24 e6		      BCC	DIAG_MODE	; If not then just continue displaying the present
+   1212  fc08							;  RAM location
+   1213  fc08		       7a 00 80 	      DEC	RAM_PTR	; If switch 3 was pressed then decrement the pointer and
+   1214  fc0b		       20 e1		      BRA	DIAG_MODE	;  display the contents of the new location
+   1215  fc0d
+   1216  fc0d		       7c 00 80    INC_DIAG   INC	RAM_PTR	; If switch 2 was pressed then increment the
+   1217  fc10							;  pointer
+   1218  fc10		       20 dc		      BRA	DIAG_MODE	; Display the contents of the new location
+   1219  fc12
+   1220  fc12							;; PAGE 32 BACKGROUND ROUTINE
+   1221  fc12
+   1222  fc12							; Main background routine
+   1223  fc12							; At present this routine performs three functions: it formats
+   1224  fc12							; information to be displayed, using a select code passed to it in
+   1225  fc12							; the A and B registers; it waits for 1/20 second to elapse and
+   1226  fc12							; completes a handshake with the foreground routine; and it reads
+   1227  fc12							; the keyboard and decides which keys have just been pressed.	As
+   1228  fc12							; long as no more than one key is pressed at a time, it the returns
+   1229  fc12							; with this keyboard information to the same routine which had
+   1230  fc12							; called it, but as soon as two keys are pressed simultaneiously it
+   1231  fc12							; discards the return address and goes instead to one of three
+   1232  fc12							; special routines
+   1233  fc12
+   1234  fc12		       fc 12	   BACKGROUND EQU	*
+   1235  fc12		       4d		      TSTA		; First, see if the display mode is one of the special ones
+   1236  fc13		       2a 48		      BPL	NOT_SPECIAL	; If the MSB is not set then standard display mode
+   1237  fc15		       48		      LSLA		; IF the MSB is set then test the next bit as well
+   1238  fc16		       2a 0c		      BPL	NOT_CONST	; if this bit is set then one of the constant patterns
+   1239  fc18							;  is to be displayed
+   1240  fc18		       cc ff ff 	      LDD	#$FFFF	; Presently the only constant pattern is the one with
+   1241  fc1b		       dd 85		      STD	MSD	;  all segments and lights on
+   1242  fc1d		       dd 87		      STD	MSD+2
+   1243  fc1f		       dd 89		      STD	MSD+4
+   1244  fc21		       7e fd 7e 	      JMP	END_DISP	; Skip the digit blanking and copying from the temporary
+   1245  fc24							;  buffer
+   1246  fc24
+   1247  fc24							;; PAGE 33
+   1248  fc24		       48	   NOT_CONST  LSLA		; If the information to be displayed is not constant,
+   1249  fc25		       2a 18		      BPL	NOT_DISP_ALT	;  see if it is alternate select mode
+   1250  fc27		       cc d4 56 	      LDD	#C*$100+F	; If it is then display the characters 'CFHd'
+   1251  fc2a		       dd dd		      STD	TEMP_BUF
+   1252  fc2c		       cc 7a ea 	      LDD	#H*$100+D
+   1253  fc2f		       dd df		      STD	TEMP_BUF+2
+   1254  fc31		       cc 60 f8 	      LDD	#SET+DEGC+DEGF+AM+PM+DATE+CURR	; Turn on all these indicator lights
+   1255  fc34		       dd e1		      STD	TEMP_BUF+4	;  to show this mode
+   1256  fc36		       d6 cb		      LDAB	ALT_SELECT	; See which of these to blank
+   1257  fc38		       53		      COMB		; Blank those whose select big was zero
+   1258  fc39		       86 10		      LDAA	#$10	; Shift it up to the upper four bits
+   1259  fc3b		       3d		      MUL
+   1260  fc3c		       7e fd 4c 	      JMP	BLANK_DISP	; Blank and copy the digits
+   1261  fc3f
+   1262  fc3f		       fc 3f	   NOT_DISP_ALT EQU	*	; The only other special mode is RAM contents
+   1263  fc3f		       d6 80		      LDAB	RAM_PTR	; Format the address first
+   1264  fc41		       ca 80		      ORAB	#$80	; Display its real value, with MSB set
+   1265  fc43		       37		      PSHB		; Save the address for later
+   1266  fc44		       bd fe a8 	      JSR	DISP_HEX	; Format it as two digit hex
+   1267  fc47		       dd 85		      STD	MSD	; Write it directly to the display buffer
+   1268  fc49		       33		      PULB		; Get the address again
+   1269  fc4a		       ce 00 00 	      LDX	#0	; This time use it to fetch the contents
+   1270  fc4d		       3a		      ABX		; Form the complet address in X
+   1271  fc4e		       e6 00		      LDAB	0,X	; Load the contents
+   1272  fc50		       bd fe a8 	      JSR	DISP_HEX	; Format it
+   1273  fc53		       dd 87		      STD	MSD+2	; Write it to the display buffer
+   1274  fc55		       cc 3f ff 	      LDD	#$FFFF-COLON-SET	; Turn on nearly all the indicator lights
+   1275  fc58		       dd 89		      STD	MSD+4	;  in this mode
+   1276  fc5a		       7e fd 7e 	      JMP	END_DISP	; No need to blank digits or copy to display RAM
+   1277  fc5d
+   1278  fc5d							;; PAGE 34
+   1279  fc5d		       37	   NOT_SPECIAL PSHB		; If none of the special display modes then save
+   1280  fc5e		       44		      LSRA		;  the zone selector and shift out the data type selector
+   1281  fc5f		       76 00 dd 	      ROR	TEMP_BUF	; The LSB of the data type selector is saved for later
+   1282  fc62		       44		      LSRA		;  as the second bit of the data type selector is shifted out
+   1283  fc63		       25 2c		      BCS	NOT_TEMP	;  test it for temperature value vs. time value
+   1284  fc65		       bd fd b5 	      JSR	POINTO_TEMP	; If it is a temperature then get its address (in X)
+   1285  fc68		       c6 80		      LDAB	#DEGC	; Assume that the units are degrees C
+   1286  fc6a		       96 dd		      LDAA	TEMP_BUF	; If this is wrong then the sign bit of temp_buf will
+   1287  fc6c		       2a 02		      BPL	IS_DEGC	;  be set
+   1288  fc6e		       c6 40		      LDAB	#DEGF	; In this case turn on the degree f light instead
+   1289  fc70		       d7 e2	   IS_DEGC    STAB	TEMP_BUF+5	;  write this value into the buffer
+   1290  fc72		       8c 00 cc 	      CPX	#TODAY_MEAN1
+   1291  fc75		       25 0d		      BLO	NOT_AVG
+   1292  fc77		       8c 00 d2 	      CPX	#TODAY_MEAN3
+   1293  fc7a		       22 08		      BHI	NOT_AVG
+   1294  fc7c		       bd f9 f7 	      JSR	AVERAGE
+   1295  fc7f		       ce 00 db 	      LDX	#TEMP+2
+   1296  fc82		       ed 00		      STD	0,X
+   1297  fc84		       bd fd ca    NOT_AVG    JSR	CALC_TEMP	; Convert to temperature in the desired units
+   1298  fc87		       bd fe 58 	      JSR	DISP_FOUR	; Now convert it to four digits on the stack
+   1299  fc8a		       7c 00 df 	      INC	TEMP_BUF+2	; Turn on the decimal point to the right of the
+   1300  fc8d							;  third digit
+   1301  fc8d		       33		      PULB		; Get back the zone selection bits
+   1302  fc8e		       7e fd 4c 	      JMP	BLANK_DISP	; Blank digits as needed and copy to RAM
+   1303  fc91
+   1304  fc91		       7d 00 dd    NOT_TEMP   TST	TEMP_BUF	; If not temperature then see if it is time or date
+   1305  fc94		       2a 2c		      BPL	DISP_TIME	; If not date then must be time
+   1306  fc96		       4d		      TSTA		; If date then may be either month/day or year
+   1307  fc97		       27 13		      BEQ	DISP_DATE	; If no other bits set then it is month/day
+   1308  fc99		       cc 07 c0 	      LDD	#1984	; The base year is 1984
+   1309  fc9c		       db 9b		      ADDB	YEAR	; Add this to the relative year value
+   1310  fc9e		       89 00		      ADCA	#0	; Carry into the upper byte
+   1311  fca0		       bd fe 58 	      JSR	DISP_FOUR	; Display as a four digit value (should get no blanking)
+   1312  fca3		       cc 00 08 	      LDD	#DATE	; Select the indicator lights to use
+   1313  fca6		       dd e1		      STD	TEMP_BUF+4	; Write them to the buffer
+   1314  fca8		       33		      PULB		; Get back the zone selection bits
+   1315  fca9		       7e fd 4c 	      JMP	BLANK_DISP	; Copy and blank as needed
+   1316  fcac
+   1317  fcac		       d6 c8	   DISP_DATE  LDAB	MONTH	; For displaying the date start by formatting
+   1318  fcae		       bd fe 34 	      JSR	DISP_TWO	;  the month as two digits with leading zero blanking
+   1319  fcb1		       dd dd		      STD	TEMP_BUF	; Write this out to the first two digits
+   1320  fcb3		       d6 c5		      LDAB	DAY	; Also format the day as two digits with blanking
+   1321  fcb5		       54		      LSRB		;  shift out the daylight saving flag
+   1322  fcb6		       bd fe 34 	      JSR	DISP_TWO
+   1323  fcb9		       cc 20 08 	      LDD	#DATE+CURR	; Set up the indicator lights
+   1324  fcbc		       dd e1		      STD	TEMP_BUF+4	; Write them to the buffer
+   1325  fcbe		       33		      PULB		; Get back the zone selector value
+   1326  fcbf		       7e fd 4c 	      JMP	BLANK_DISP	; Blank digits if required and copy to RAM
+   1327  fcc2
+   1328  fcc2							;; PAGE 35
+   1329  fcc2		       fc c2	   DISP_TIME  EQU	*
+   1330  fcc2		       bd fd b5 	      JSR	POINTO_TEMP	; Get the address of the temperature associated with
+   1331  fcc5							;  this time
+   1332  fcc5		       a6 02		      LDAA	2,X	; Get the time value in A
+   1333  fcc7		       5f		      CLRB		; Set the last digit of time to zero
+   1334  fcc8		       8c 00 9c 	      CPX	#CONV_BUF+15	; See if it is the current time which is needed
+   1335  fccb		       24 04		      BHS	NOT_CUR_TIME	; If it is then
+   1336  fccd		       96 98		      LDAA	TIME_OF_DAY	;  substitute the current time of day
+   1337  fccf		       d6 95		      LDAB	TENTHS	;  and the current tenths of minutes, which has the
+   1338  fcd1							;  units digit of the minutes
+   1339  fcd1		       54	   NOT_CUR_TIME LSRB		; Shift the minutes digit to the low four bits
+   1340  fcd2		       54		      LSRB
+   1341  fcd3		       54		      LSRB
+   1342  fcd4		       54		      LSRB
+   1343  fcd5		       dd d9		      STD	TEMP	; Save both bytes of the time value
+   1344  fcd7		       26 08		      BNE	NOT_2400	; If both bytes are zero then it is 12:00 midnight
+   1345  fcd9		       d6 02		      LDAB	PORT1	; See if we are formatting 24 hour time
+   1346  fcdb		       c5 40		      BITB	#JUMPER_24
+   1347  fcdd		       27 02		      BEQ	NOT_2400	; If it is 12:00 midnight and we are in 24 hour time
+   1348  fcdf		       86 90		      LDAA	#24*6	;  then substitute the time 24:00
+   1349  fce1		       c6 ab	   NOT_2400   LDAB	#171	; If it is not midnight or we are in 12 hour time
+   1350  fce3		       3d		      MUL		;  mode then continue by multiplying by 1/6
+   1351  fce4		       04		      LSRD		; 171 is actually 1024/6 so after we shift down two bits the
+   1352  fce5		       04		      LSRD		;  whole number part is in A and the fraction is in B
+   1353  fce6		       d7 d9		      STAB	TEMP	; Save the fraction part
+   1354  fce8		       d6 02		      LDAB	PORT1	; See if we are in 12 hour or 24 hour time mode
+   1355  fcea		       c5 40		      BITB	#JUMPER_24
+   1356  fcec		       27 08		      BEQ	TWELVE_HOUR	; If we are in 24 hour mode then
+   1357  fcee		       0d		      SEC		;  set a bit to indicate it
+   1358  fcef		       79 00 da 	      ROL	TEMP+1
+   1359  fcf2		       c6 fc		      LDAB	#ZERO	; In 24 hour mode don't suppress zeros
+   1360  fcf4		       20 12		      BRA	FORM_HOURS	; /Format the hours digits exactly as they are
+   1361  fcf6
+   1362  fcf6		       81 0c	   TWELVE_HOUR CMPA	#12	; In 12 hour mode see if it is AM or PM
+   1363  fcf8		       25 02		      BLO	IS_AM	; If it is PM then
+   1364  fcfa		       80 0c		      SUBA	#12	;  shift it down to a value from 0 to 11
+   1365  fcfc		       79 00 da    IS_AM      ROL	TEMP+1	; Save the carry bit to show whether it is AM or PM
+   1366  fcff		       79 00 da 	      ROL	TEMP+1	; Also save a zero bit to show that it is 12 hour time
+   1367  fd02		       4d		      TSTA		; See if it is zero hours
+   1368  fd03		       26 02		      BNE	NOT_0	; If it is then
+   1369  fd05		       86 0c		      LDAA	#12	;   make it 12 hours
+   1370  fd07		       5f	   NOT_0      CLRB		; Assume initially that the tens of hours digit is zero
+   1371  fd08		       80 0a	   FORM_HOURS SUBA	#10	; See if it is at least one
+   1372  fd0a		       25 0a		      BLO	GOT_TENS	; If not then leave the tens digit blank
+   1373  fd0c		       c6 28		      LDAB	#ONE	; Otherwise assume that it is a one
+   1374  fd0e		       80 0a		      SUBA	#10	; See if is actually two
+   1375  fd10		       25 04		      BLO	GOT_TENS	; If not then leave it a one
+   1376  fd12		       c6 e6		      LDAB	#TWO	; Otherwise make it a two
+   1377  fd14		       80 0a		      SUBA	#10	; Subtract another ten to match the results for zero and one
+   1378  fd16		       d7 dd	   GOT_TENS   STAB	TEMP_BUF	; Write the tens digit to the buffer
+   1379  fd18		       16		      TAB		; Copy the negative residual to B
+   1380  fd19		       ce fd c7 	      LDX	#DIGIT_TAB+10-256	; Point to the lookup table but compensate for
+   1381  fd1c		       3a		      ABX		;  the extra ten which was subtracted above
+   1382  fd1d		       e6 00		      LDAB	0,X	; Get the bit pattern for the second digit
+   1383  fd1f		       d7 de		      STAB	TEMP_BUF+1	; Write the second digit to the buffer
+   1384  fd21		       d6 d9		      LDAB	TEMP	; Get the fractional part from above to calcuate the
+   1385  fd23
+   1386  fd23							;; PAGE 36
+   1387  fd23		       86 06		      LDAA	#6	;  tens of minutes
+   1388  fd25							; original has INCB, June 1984 does not
+   1389  fd25		       5c		      INCB
+   1390  fd26		       3d		      MUL
+   1391  fd27		       16		      TAB		; Copy this into B
+   1392  fd28		       ce fe bd 	      LDX	#DIGIT_TAB	; Look up the bit pattern for this digit
+   1393  fd2b		       3a		      ABX
+   1394  fd2c		       e6 00		      LDAB	0,X
+   1395  fd2e		       d7 df		      STAB	TEMP_BUF+2	; Write the third digit to the buffer
+   1396  fd30		       d6 da		      LDAB	TEMP+1	; Get the four bits of the last digit
+   1397  fd32		       4f		      CLRA		; Assume that neither AM or PM will be turned on (24 hour mode)
+   1398  fd33		       54		      LSRB		; Test the bit which was saved to show this
+   1399  fd34		       25 07		      BCS	DISP_AM_PM	; If it is set then leave both lights off
+   1400  fd36		       86 20		      LDAA	#AM	; If it is clear then assume that is is AM
+   1401  fd38		       54		      LSRB		; The next bit will tell us which it is
+   1402  fd39		       25 02		      BCS	DISP_AM_PM	; If it is set then leave the AM light on
+   1403  fd3b		       86 10		      LDAA	#PM	; If it is clear then turn on the PM light instead
+   1404  fd3d		       97 e2	   DISP_AM_PM STAA	TEMP_BUF+5	; Save the second byte of indicator lights
+   1405  fd3f		       ce fe bd 	      LDX	#DIGIT_TAB	; Index into the table
+   1406  fd42		       3a		      ABX
+   1407  fd43		       a6 00		      LDAA	0,X	; Get the digit
+   1408  fd45		       d6 e1		      LDAB	TEMP_BUF+4	; Get the first byte of indicator lights
+   1409  fd47		       ca 80		      ORAB	#COLON/$100	; Set the colon to show time display mode
+   1410  fd49		       dd e0		      STD	TEMP_BUF+3	; Write out the fourth digit and the lights
+   1411  fd4b		       33		      PULB		; Get the zone selector value
+   1412  fd4c
+   1413  fd4c							; Drop directly into the display blanking routine
+   1414  fd4c
+   1415  fd4c							;; PAGE 37
+   1416  fd4c
+   1417  fd4c							; Copy the display data from the temporary buffer to the display
+   1418  fd4c							; buffer while blanking digits as required and blinking the colon
+   1419  fd4c
+   1420  fd4c		       37	   BLANK_DISP PSHB		; Save the zone selector value
+   1421  fd4d		       ce 00 00 	      LDX	#0	; Use X as a pointer and counter
+   1422  fd50		       a6 dd	   BLANK_NEXT LDAA	TEMP_BUF,X	; Load a digit from the temporary buffer
+   1423  fd52		       58		      LSLB		; See whether this one should be blanked
+   1424  fd53		       24 01		      BCC	NOT_BLANK	; If the bit is not set then don't blank the digit
+   1425  fd55		       4f		      CLRA		; Otherwise blank it
+   1426  fd56		       a7 85	   NOT_BLANK  STAA	MSD,X	; Write the digit to the display buffer
+   1427  fd58		       08		      INX		; point to the next digit
+   1428  fd59		       8c 00 04 	      CPX	#4	; See if all four digits have been copied
+   1429  fd5c		       25 f2		      BLO	BLANK_NEXT	; Repeat until all four done
+   1430  fd5e		       96 e1		      LDAA	TEMP_BUF+4	; Get the first byte of indicator light bits
+   1431  fd60		       58		      LSLB		; See if the set light should be turned on
+   1432  fd61		       24 02		      BCC	SET_OFF	; If not then leave it as is
+   1433  fd63		       8a 40		      ORAA	#SET/$100	; Otherwise turn it on
+   1434  fd65		       d6 92	   SET_OFF    LDAB	TWENTIETHS	; See if the blinking colon should be on or off
+   1435  fd67		       c0 14	   SUB_20     SUBB	#20	;  this time - get the present time mod 1 second.
+   1436  fd69		       24 fc		      BHS	SUB_20	;  Keep subtracting 1 second until it goes negative
+   1437  fd6b		       cb 0a		      ADDB	#10	; Add back 1/2 second
+   1438  fd6d		       2b 02		      BMI	COLON_ON	; If we are over 1/2 second into the current second then
+   1439  fd6f		       84 7f		      ANDA	#$FF-(COLON/$100)	; Turn off the colon (if it was on)
+   1440  fd71		       33	   COLON_ON   PULB		; Get back the original zone selector value
+   1441  fd72		       c4 03		      ANDB	#ACC0+ACC1	; Use just the two lowest bits of the byte
+   1442  fd74		       ce fd b1 	      LDX	#ZONE_TAB	; Point to a lookup table for the zone indictor lights
+   1443  fd77		       3a		      ABX		; Index into it
+   1444  fd78		       d6 e2		      LDAB	TEMP_BUF+5	; Get the second byte of the indicator bits
+   1445  fd7a		       ea 00		      ORAB	0,X	; Or in the zone indicator bits
+   1446  fd7c		       dd 89		      STD	MSD+4	; Write both bytes to the display buffer
+   1447  fd7e
+   1448  fd7e		       ce ff ff    END_DISP   LDX	#-1	; Set up a counter to measure processor loading
+   1449  fd81		       08	   INC_LOAD   INX		; Increment it once every 9 microseconds
+   1450  fd82		       96 8b		      LDAA	ADC_STATE	; Before continuing, wait for the foreground
+   1451  fd84		       26 fb		      BNE	INC_LOAD	;  task to indicate that 1/20 second has elapsed
+   1452  fd86		       86 03		      LDAA	#3	; Reset the ADC state to 3 to complete the handshake with
+   1453  fd88		       97 8b		      STAA	ADC_STATE	;  foreground
+   1454  fd8a		       df e1		      STX	TEMP_BUF+4	; Put the loading value in a place where it will not
+   1455  fd8c							;  get in the way
+   1456  fd8c		       96 02		      LDAA	PORT1	; Read the keyboard
+   1457  fd8e		       16		      TAB		; Make a second copy of the key closures
+   1458  fd8f		       43		      COMA		; Complement one copy so that a bit is set for each key that
+   1459  fd90							;  is pressed
+   1460  fd90		       94 d7		      ANDA	LAST_KBD	; And it with the previous reading of the keyboard,
+   1461  fd92							;  uncomplemented, so that a bit will now be set only if
+   1462  fd92							;  the key is pressed now but was not pressed 1/20 sec ago
+   1463  fd92		       d7 d7		      STAB	LAST_KBD	; Save the present key closures to use 1/20 sec from now
+   1464  fd94		       53		      COMB		; Now also complement this to set the bit if the key is pressed
+   1465  fd95		       84 07		      ANDA	#ACC0+ACC1+ACC2	; Mask off any other bits in the returned byte
+   1466  fd97		       c4 07		      ANDB	#ACC0+ACC1+ACC2	; Do the same for the current bits
+   1467  fd99		       38		      PULX		; Take the return address of the stack in case we don't return
+   1468  fd9a		       c1 03		      CMPB	#ACC0+ACC1	; See if both switch 1 and switch 2 are being pressed
+   1469  fd9c		       26 03		      BNE	NOT_ALT	;  simultaneiously
+   1470  fd9e		       7e fa cd 	      JMP	ENTER_ALT	; If they are then go to alternate display mode
+   1471  fda1
+   1472  fda1							;; PAGE 38
+   1473  fda1		       c1 05	   NOT_ALT    CMPB	#ACC0+ACC2	; See if both switch 1 and switch 3 are being pressed
+   1474  fda3		       26 03		      BNE	NOT_SET	;  simultaneously
+   1475  fda5		       7e fa e2 	      JMP	SET_MODE	; If they are then go to time setting mode
+   1476  fda8		       c1 06	   NOT_SET    CMPB	#ACC1+ACC2	; See if both switch 2 and switch 3 are being pressed
+   1477  fdaa		       26 03		      BNE	NOT_DIAG	;  simultaneously
+   1478  fdac		       7e fb ee 	      JMP	DIAG_MODE	; If they are then go to diagnostic mode
+   1479  fdaf		       6e 00	   NOT_DIAG   JMP	0,X	; If no pairs are being pressed then return to the calling
+   1480  fdb1							;  routine
+   1481  fdb1
+   1482  fdb1		       04	   ZONE_TAB   DC	ZONE1	; Indicator light for zone 1
+   1483  fdb2		       02		      DC	ZONE2	; Indicator light for zone 2
+   1484  fdb3		       01		      DC	ZONE3	; Indicator light for zone 3
+   1485  fdb4		       00		      DC	0	; Special value to suppress zone indicator lights
+   1486  fdb5
+   1487  fdb5							;; PAGE 39
+   1488  fdb5							; Subroutine to find the address of a temperature value from the
+   1489  fdb5							; type indicator in A and the zone number in B.
+   1490  fdb5							; Returns the address in X and the indicator light bits in
+   1491  fdb5							; TEMP_BUF+4
+   1492  fdb5
+   1493  fdb5		       37	   POINTO_TEMP PSHB		; Set aside the zone number for now
+   1494  fdb6		       16		      TAB		; See what type of temp is desired
+   1495  fdb7		       ce fe 1f 	      LDX	#TEMP_TAB	; Index into a table of temperature addresses and
+   1496  fdba		       3a		      ABX		;  indicator light bits. X + 3*B
+   1497  fdbb		       58		      LSLB
+   1498  fdbc		       3a		      ABX
+   1499  fdbd		       a6 02		      LDAA	2,X	; Get the indicator light bits first
+   1500  fdbf		       97 e1		      STAA	TEMP_BUF+4	; Save them in RAM
+   1501  fdc1		       ee 00		      LDX	0,X	; Load the address from the table, whic his the address of
+   1502  fdc3							;  the temperature value for zone 1
+   1503  fdc3		       33		      PULB		; Get the zone number again
+   1504  fdc4		       c4 03		      ANDB	#ACC0+ACC1	; Look at just the zone selector bits
+   1505  fdc6		       3a		      ABX		; Add three times the zone number to select the value for the
+   1506  fdc7		       58		      LSLB		;  specific zone
+   1507  fdc8		       3a		      ABX
+   1508  fdc9		       39		      RTS		; Return
+   1509  fdca
+   1510  fdca							; Subroutine to calculate the temperature in tenths of a degree,
+   1511  fdca							; either C or F, from the A/D values
+   1512  fdca							; Enter with the address of the A/D value in X and a flag to select
+   1513  fdca							; degrees C or F in the sign bit of TEMP_BUF
+   1514  fdca							; Returns the temperature in A and B
+   1515  fdca
+   1516  fdca		       fd ca	   CALC_TEMP  EQU	*
+   1517  fdca		       dc 99		      LDD	CONV_BUF+12	; Calculate the difference between the high reference
+   1518  fdcc		       93 96		      SUBD	CONV_BUF+9	;  and the low reference - this is 100C or 180F
+   1519  fdce		       05		      LSLD		; We will be dividing twice this value into half of the other
+   1520  fdcf							;  value so the useable temperature range is 400c or 720f
+   1521  fdcf		       dd d9		      STD	TEMP	; Set this aside as our divisor
+   1522  fdd1		       04		      LSRD		; Now calculate the difference between the high reference and
+   1523  fdd2		       d3 99		      ADDD	CONV_BUF+12	;  the temperature conversion value, but offset it
+   1524  fdd4							;  upward by 100c or 180f to make sure it is positive
+   1525  fdd4		       a3 00		      SUBD	0,X	; We will sutract the offset out later
+   1526  fdd6		       04		      LSRD		; Divide by two to give sufficient range
+   1527  fdd7		       ce 00 10 	      LDX	#16	; Initialize a counter to generate a 16-bit quotient
+   1528  fdda		       93 d9	   TEMP_LOOP  SUBD	TEMP	; Perform a trial subtraction of the divisor
+   1529  fddc		       24 02		      BHS	IS_POSITIVE	; If the remainder is still positive then leave it
+   1530  fdde		       d3 d9		      ADDD	TEMP	; Otherwise add the divisor back in
+   1531  fde0		       79 00 dc    IS_POSITIVE ROL	TEMP+3	; Shift the next bit of the quotient from the carry bit
+   1532  fde3		       79 00 db 	      ROL	TEMP+2	;  and shift the entire quotient up one bit
+   1533  fde6		       05		      LSLD		; Double the remainder
+   1534  fde7		       09		      DEX		; Decrement the counter
+   1535  fde8		       26 f0		      BNE	TEMP_LOOP	; Repeat for 16 bits of quotient
+   1536  fdea		       d6 dc		      LDAB	TEMP+3	; Get the low byte of the quotient
+   1537  fdec		       53		      COMB		; Correct for the bit inversion in the above divide
+   1538  fded		       96 dd		      LDAA	TEMP_BUF	; See if we want degrees C or F
+   1539  fdef		       2a 17		      BPL	CALC_C	; If it is C then use a different version of the scaling
+   1540  fdf1		       86 e1		      LDAA	#180*10/8	; For degrees F the scaling factor is 1800 tenths of
+   1541  fdf3		       3d		      MUL		;  a degree - any powers of two will be removed by shifting
+   1542  fdf4
+   1543  fdf4							;; PAGE 40
+   1544  fdf4		       8b 02		      ADDA	#2	; Round up 1/20 degree
+   1545  fdf6		       97 d9		      STAA	TEMP	; This is part of the second byte of the final result
+   1546  fdf8		       96 db		      LDAA	TEMP+2	; Get the high byte of the quotient
+   1547  fdfa		       43		      COMA		; Again correct for the bit inversion
+   1548  fdfb		       c6 e1		      LDAB	#180*10/8	; Scale this in the same way
+   1549  fdfd		       3d		      MUL
+   1550  fdfe		       db d9		      ADDB	TEMP	; Combine the two parts of the lower byte of the result
+   1551  fe00		       89 00		      ADCA	#0	; Carry into the upper byte
+   1552  fe02		       04		      LSRD		; Shift down two bits to get the correct scaling
+   1553  fe03		       04		      LSRD
+   1554  fe04		       83 05 c8 	      SUBD	#(180-32)*10	; This cancels the extra 180 degrees which were
+   1555  fe07							;  added in to make the values positive and corrects to 32 degrees
+   1556  fe07							;  as the freezing point of water in Fahrenheit
+   1557  fe07		       39		      RTS
+   1558  fe08
+   1559  fe08		       86 7d	   CALC_C     LDAA	#100*10/8	; For degrees C the scaling factor is 1000 tenths
+   1560  fe0a		       3d		      MUL		;  of a degree
+   1561  fe0b		       8b 02		      ADDA	#2	; Round up 1/20 degree
+   1562  fe0d		       97 d9		      STAA	TEMP	; Save part of the low byte of the result
+   1563  fe0f		       96 db		      LDAA	TEMP+2	; Get the high byte of the quotient
+   1564  fe11		       43		      COMA		; Correct for bit inversion
+   1565  fe12		       c6 7d		      LDAB	#100*10/8	; Scale it
+   1566  fe14		       3d		      MUL
+   1567  fe15		       db d9		      ADDB	TEMP	; Finish calculating the low byte
+   1568  fe17		       89 00		      ADCA	#0	; And the high byte
+   1569  fe19		       04		      LSRD		; Shift down two bits to get final scaling
+   1570  fe1a		       04		      LSRD
+   1571  fe1b		       83 03 e8 	      SUBD	#100*10	; Cancel the extra 100 degrees
+   1572  fe1e		       39		      RTS		; Return the value
+   1573  fe1f
+   1574  fe1f							;; PAGE 41
+   1575  fe1f
+   1576  fe1f							; Lookup tables of temperature value addresses and indicator bit
+   1577  fe1f							; values
+   1578  fe1f
+   1579  fe1f		       00 8d	   TEMP_TAB   DC.W	CONV_BUF	; Current temperature
+   1580  fe21		       20		      DC.B	CURR/$100
+   1581  fe22		       00 a8		      DC.W	TODAY_MAX1	; Today's high
+   1582  fe24		       14		      DC.B	(TODAY+HIGH)/$100
+   1583  fe25		       00 9f		      DC.W	TODAY_MIN1	; Today's low
+   1584  fe27		       12		      DC.B	(TODAY+LOW)/$100
+   1585  fe28		       00 cc		      DC.W	TODAY_MEAN1	; Today's mean
+   1586  fe2a		       11		      DC.B	(TODAY+MEAN)/$100
+   1587  fe2b		       00 ba		      DC.W	LAST_MAX1	; Yesterday's high
+   1588  fe2d		       0c		      DC.B	(YEST+HIGH)/$100
+   1589  fe2e		       00 b1		      DC.W	LAST_MIN1	; Yesterday's low
+   1590  fe30		       0a		      DC.B	(YEST+LOW)/$100
+   1591  fe31		       00 c3		      DC.W	LAST_MEAN1	; Yesterday's mean
+   1592  fe33		       09		      DC.B	(YEST+MEAN)/$100
+   1593  fe34
+   1594  fe34							;; PAGE 42
+   1595  fe34
+   1596  fe34							; Formatting routines
+   1597  fe34
+   1598  fe34							; What follows is a variety of formatting routines for various
+   1599  fe34							; combinations of input and output information.  The output information
+   1600  fe34							; is always a compbination of displayable digits returned in
+   1601  fe34							; TEMP_BUF through TEMP_BUF+3
+   1602  fe34
+   1603  fe34							; Subroutine to display a two digit value from 0 to 99, with zero
+   1604  fe34							; suppression on the first digit
+   1605  fe34
+   1606  fe34		       fe 34	   DISP_TWO   EQU	*	; The value to be formatted is passed in B
+   1607  fe34		       86 cd		      LDAA	#205	; The first objective is to multiple by 1/10 and separate
+   1608  fe36		       3d		      MUL		;  the whole number and fraction parts of the result
+   1609  fe37		       04		      LSRD		; Since the value 205 is about eight times 256/10, shift the
+   1610  fe38		       04		      LSRD		;  answer down 3 bits and whole number will be in A and
+   1611  fe39		       04		      LSRD		;  the fraction in B
+   1612  fe3a		       37		      PSHB		; Save the fraction temporarily on the stack
+   1613  fe3b		       16		      TAB		; Copy the whole number into B
+   1614  fe3c		       27 06		      BEQ	SUPP_TWO	; If the whole number part is zero, supress it
+   1615  fe3e		       ce fe bd    END_TWO    LDX	#DIGIT_TAB	; If it is not zero then index into a lookup
+   1616  fe41		       3a		      ABX		;  table to get the bits for this digit
+   1617  fe42		       a6 00		      LDAA	0,X
+   1618  fe44		       33	   SUPP_TWO   PULB		; Get the fraction back off the stack
+   1619  fe45		       97 df		      STAA	TEMP_BUF+2	; Save the first digit in the buffer
+   1620  fe47		       86 0a		      LDAA	#10	; Now multiply the fraction by ten to get the second digit
+   1621  fe49		       3d		      MUL
+   1622  fe4a		       89 00		      ADCA	#0	; Round up to prevent truncation errors
+   1623  fe4c		       16		      TAB		; Copy the digit into B
+   1624  fe4d		       ce fe bd 	      LDX	#DIGIT_TAB	; Also index into the table
+   1625  fe50		       3a		      ABX		; Do not do zero supression since this is the last digit
+   1626  fe51		       e6 00		      LDAB	0,X	; Get the segments bits
+   1627  fe53		       d7 e0		      STAB	TEMP_BUF+3	; Save the second digit in the buffer
+   1628  fe55		       96 df		      LDAA	TEMP_BUF+2	; Return both digita in registers as well in case
+   1629  fe57		       39		      RTS		;  the calling routine wants to write them into another location
+   1630  fe58
+   1631  fe58							;; PAGE 43
+   1632  fe58
+   1633  fe58							; Subroutine to display a four digit vlaue from -999 to 2999, with
+   1634  fe58							; zero suppression on the first two digits
+   1635  fe58
+   1636  fe58		       fe 58	   DISP_FOUR  EQU	*	; The value to be formatted is pass in A and B
+   1637  fe58		       dd d9		      STD	TEMP	; Save the unmodified vlue to be formatted
+   1638  fe5a		       2a 0a		      BPL	PLUS_FOUR	; Test the sign at the same time
+   1639  fe5c		       86 02		      LDAA	#SEGG	; If the value is negative, then maket he first digit '-'
+   1640  fe5e		       97 dd		      STAA	TEMP_BUF	; Write this character into the first digit in the buffer
+   1641  fe60		       4f		      CLRA		; Now negate the negative value to give a positive number
+   1642  fe61		       5f		      CLRB		;  to be formatted
+   1643  fe62		       93 d9		      SUBD	TEMP
+   1644  fe64		       20 1b		      BRA	CONTIN_FOUR	; Skip ahead to the second digit formatting
+   1645  fe66		       83 03 e8    PLUS_FOUR  SUBD	#1000	; If the value is positive, see if it is more
+   1646  fe69		       24 03		      BHS	ONE_THOUSAND	;  than 999
+   1647  fe6b		       4f		      CLRA		; If not then make the first digit blank
+   1648  fe6c		       20 0f		      BRA	SAVE_FIRST	; Push it onto the stack and continue from there
+   1649  fe6e
+   1650  fe6e		       dd d9	   ONE_THOUSAND STD	TEMP	; If the value is more than 999 then save the
+   1651  fe70							;  value less than one thousand
+   1652  fe70		       83 03 e8 	      SUBD	#1000	; See if the remainder is still more then 999
+   1653  fe73		       24 04		      BHS	TWO_THOUSAND	; If it is then the first digit is assumed to be 2
+   1654  fe75		       86 28		      LDAA	#ONE	; But if not then make the first digit 1
+   1655  fe77		       20 04		      BRA	SAVE_FIRST	; Push it on the stack and continue from there
+   1656  fe79
+   1657  fe79		       dd d9	   TWO_THOUSAND STD	TEMP	; If the value is more than 1999 the save
+   1658  fe7b							;  the value less two thousand
+   1659  fe7b		       86 e6		      LDAA	#TWO	; Make the first digit 2
+   1660  fe7d		       97 dd	   SAVE_FIRST STAA	TEMP_BUF	; Save it in the buffer
+   1661  fe7f		       dc d9		      LDD	TEMP	; Get the value mod 1000
+   1662  fe7f		       fe 81	   CONTIN_FOUR EQU	*
+   1663  fe81		       ce fe bc 	      LDX	#DIGIT_TAB-1	; Point to the table of digit patterns
+   1664  fe84		       08	   SUB_100    INX		; Keep incrementing into this table and subtracting 100 from
+   1665  fe85		       83 00 64 	      SUBD	#100	;  the value until it goes negative
+   1666  fe88		       24 fa		      BHS	SUB_100	; As soon as it goes negative we are pointing to the digit
+   1667  fe8a							;  to be displayed
+   1668  fe8a		       cb 64		      ADDB	#100	; Cancel the extra subtraction
+   1669  fe8c		       a6 00		      LDAA	0,X	; Load the second digit from the lookup table
+   1670  fe8e		       81 fc		      CMPA	#ZERO	; See if the second digit is a zero
+   1671  fe90		       26 0a		      BNE	SEC_NOT_ZERO	; If second digit is zero then should it be blanked
+   1672  fe92		       96 dd		      LDAA	TEMP_BUF	; Look at the first digit
+   1673  fe94		       27 06		      BEQ	BLANK_SECOND	; If first digit is blank then blank second
+   1674  fe96		       80 02		      SUBA	#SEGG	; Also, if the first digit is '-' then blank second
+   1675  fe98		       27 02		      BEQ	BLANK_SECOND
+   1676  fe9a		       86 fc		      LDAA	#ZERO	; Otherwise put an actual zero that digit
+   1677  fe9a		       fe 9c	   BLANK_SECOND EQU	*	; Either a zero or a blank will be pushed next
+   1678  fe9c		       97 de	   SEC_NOT_ZERO STAA	TEMP_BUF+1	; Save the second digit, whatever it is
+   1679  fe9e		       86 cd		      LDAA	#205	; Duplicate the first part of the routine above for
+   1680  fea0		       3d		      MUL		;  formatting a two digit number, so that we can enter that
+   1681  fea1		       04		      LSRD		;  routine and format the last two digita without allowing
+   1682  fea2		       04		      LSRD		;  the first digit to be blanked
+   1683  fea3		       04		      LSRD
+   1684  fea4		       37		      PSHB
+   1685  fea5		       16		      TAB
+   1686  fea6		       20 96		      BRA	END_TWO	; Now jump into the two digit formatter
+   1687  fea8
+   1688  fea8							;; PAGE 44
+   1689  fea8
+   1690  fea8							; Subroutine to display a two digit hex value
+   1691  fea8		       17	   DISP_HEX   TBA		; Make a duplicate copy of the value to be displayed
+   1692  fea9		       54		      LSRB		; Isolate the top four bits of the copy in B
+   1693  feaa		       54		      LSRB
+   1694  feab		       54		      LSRB
+   1695  feac		       54		      LSRB
+   1696  fead		       ce fe bd 	      LDX	#DIGIT_TAB	; Point to the lookup table of both decimal and hex
+   1697  feb0		       3a		      ABX		;  bit patterns and index into it
+   1698  feb1		       16		      TAB		; Copy the original value back into B
+   1699  feb2		       a6 00		      LDAA	0,X	; Get the pattern for the first digit in A
+   1700  feb4		       c4 0f		      ANDB	#$0F	; Isolate the bottom four bits this time
+   1701  feb6		       ce fe bd 	      LDX	#DIGIT_TAB	; Again index into the table
+   1702  feb9		       3a		      ABX
+   1703  feba		       e6 00		      LDAB	0,X	; Now we have the bit apttern for the second digit
+   1704  febc		       39		      RTS		; Return with both digit patterns in registers
+   1705  febd
+   1706  febd							;; PAGE 45
+   1707  febd
+   1708  febd							; Lookup table of bit patterns for each digit
+   1709  febd		       fc 28 e6 ae*DIGIT_TAB  DC	ZERO, ONE, TWO, THREE, FOUR
+   1710  fec2		       9e de 2c fe*	      DC	FIVE, SIX, SEVEN, EIGHT, NINE
+   1711  fec7		       7e da d4 ea*	      DC	A,B,C,D,E,F
+   1712  fecd
+   1713  fecd							;; PAGE 46
+   1714  fecd
+   1715  fecd							; Restart and initialization
+   1716  fecd
+   1717  fecd							; When power is first turned on and the processor starts running
+   1718  fecd							; there are cetain things which must be done before the instrument
+   1719  fecd							; can be allowed to operate normally.	This incluides setting up the
+   1720  fecd							; hardware to the desired mode of operation, initializing the
+   1721  fecd							; contents of memory to a konwn state, performing certain tests on
+   1722  fecd							; the hardware, allowing the A/D circuitry to settle and putting
+   1723  fecd							; meaningful values in for the minimum, maximum, and mean
+   1724  fecd							; temperatures
+   1725  fecd
+   1726  fecd		       fe cd	   RESTART    EQU	*	; The pointer in the vector table causes executeion to
+   1727  fecd							;  begin at this point after a reset
+   1728  fecd		       4f		      CLRA		; Begin by setting up the internal hardware
+   1729  fece		       97 00		      STAA	$00	; Make all 8 bits of port1 into inputs
+   1730  fed0		       43		      COMA
+   1731  fed1		       97 04		      STAA	$04	; Make all 16 bits of ports 3 and 4 into outputs
+   1732  fed3		       97 05		      STAA	$05
+   1733  fed5		       97 10		      STAA	SER_MODE_REG	; Set the serial port up for external clock
+   1734  fed7		       86 12		      LDAA	#$12	; Make some of the bits in port 2 inputs and some outputs
+   1735  fed9		       97 01		      STAA	$01	; Bits 0, 2, and 3 are inputs, bits 1 and 4 are outputs
+   1736  fedb		       86 08		      LDAA	#TIMER_EOCI	; Set the bit to allow output compare interrupts
+   1737  fedd		       97 08		      STAA	TIMER_CONTROL
+   1738  fedf
+   1739  fedf		       ce 00 80 	      LDX	#$80	; Initialize the contents of all 128 bytes of internal RAM
+   1740  fee2		       6f 7f	   CLEAR_RAM  CLR	$7F,X	;  to zero
+   1741  fee4		       09		      DEX
+   1742  fee5		       26 fb		      BNE	CLEAR_RAM
+   1743  fee7		       86 01		      LDAA	#1	; Set the month to 1
+   1744  fee9		       97 c8		      STAA	MONTH
+   1745  feeb		       97 8c		      STAA	A_D_SELECT	; Also set the A/D converter to select channel 1
+   1746  feed		       4c		      INCA		; Set the day to 2
+   1747  feee		       97 c5		      STAA	DAY
+   1748  fef0		       86 0f		      LDAA	#$0F	; Set the alternate display mode selection value to
+   1749  fef2		       97 cb		      STAA	ALT_SELECT	;  select all four display modes
+   1750  fef4		       cc ff ff 	      LDD	#$FFFF	; Finally, initialize the display memory to turn on all
+   1751  fef7		       dd 85		      STD	MSD	;  eight segments of all six digits for the first few
+   1752  fef9		       dd 87		      STD	MSD+2	; seconds as a means of testing all of that hardware
+   1753  fefb		       dd 89		      STD	MSD+4
+   1754  fefd
+   1755  fefd		       8e 00 ff 	      LDS	#$FF	; Initialize the stack pointer to point at the very last
+   1756  ff00							;  RAM location - the stack will occupy the section
+   1757  ff00							;  from here down to hopefully just short of the
+   1758  ff00							;  last RAM location used for other purposes
+   1759  ff00
+   1760  ff00		       0e		      CLI		; Here we Go!!!
+   1761  ff01							; Since the only interrupt enabled in the system is the
+   1762  ff01							;  output compare interrupt, as soon as the main interrupt
+   1763  ff01							;  enable bit is cleared (it is actually an interrupt
+   1764  ff01							;  inhibit) we can begin to get output compare interrupts
+   1765  ff01
+   1766  ff01							;; PAGE 47
+   1767  ff01
+   1768  ff01							; Wait several seconds while things settle down
+   1769  ff01		       cc 03 28 	      LDD	#$300+40	; Load register A with a 3 and register B with a 40
+   1770  ff04							; The 3 will be used to communicate with the foreground
+   1771  ff04							;  task and the 40 will allow us to delay for two
+   1772  ff04							;  seconds (40 twentieths)
+   1773  ff04		       7d 00 8b    WAIT_ZERO  TST	ADC_STATE	; Each time a twentieth of a second has elapsed, this
+   1774  ff07		       26 fb		      BNE	WAIT_ZERO	;  state counter will be decremented to zero - until then
+   1775  ff09							;  just remain in this loop waiting
+   1776  ff09		       97 8b		      STAA	ADC_STATE	; The background task must now complete a handshake
+   1777  ff0b							;  with the foreground task to let it know that it has
+   1778  ff0b							;  seen the indication of the completion of a twentieth
+   1779  ff0b							;  of a second and is ready to go on the the next twentieth
+   1780  ff0b		       5a		      DECB		; After the end of each twentieth, decrement the counter in
+   1781  ff0c		       26 f6		      BNE	WAIT_ZERO	;  register B to see if two seconds have passed yet
+   1782  ff0e
+   1783  ff0e							;; PAGE 48
+   1784  ff0e							; Now that the adc has been running for a few seconds, all of the
+   1785  ff0e							; voltage levels should have settled down and the individual
+   1786  ff0e							; measurements should all be valid, but since the value which is saved
+   1787  ff0e							; internally is a running average of a large number of
+   1788  ff0e							; measurements it could take a long time before this filtered value
+   1789  ff0e							; is reasonably close to the actual answer. To avoid this, it is
+   1790  ff0e							; necessary that we initialize the five filtered values to something
+   1791  ff0e							; appropriate. The way we do that is to reset the filtered value
+   1792  ff0e							; to zero, take one more measurement on each of the five channels,
+   1793  ff0e							; which will result in a filtered value which is one fourth
+   1794  ff0e							; of this single reading, then multiply this value by four
+   1795  ff0e							; and put it back
+   1796  ff0e
+   1797  ff0e		       ce 00 0f 	      LDX	#15	; The conversion buffer is 15 bytes long
+   1798  ff11		       6f 8c	   CLEAR_BUF  CLR	CONV_BUF-1,X	; clear the buffer starting with the last byte
+   1799  ff13		       09		      DEX		; Decrement the combined counter and pointer
+   1800  ff14		       26 fb		      BNE	CLEAR_BUF	; Repeat until all 15 bytes are zero
+   1801  ff16
+   1802  ff16							; Note that because of the synchronization we achieved above with
+   1803  ff16							; the foreground task there is no danger of not finishing the
+   1804  ff16							; clearing of the buffer before the completion of the next
+   1805  ff16							; measurement.
+   1806  ff16
+   1807  ff16		       c6 05		      LDAB	#5	; Set up register B as a counter to count out five more
+   1808  ff18							;  conversions - register A still contains a three
+   1809  ff18		       7d 00 8b    LOOP_TST   TST	ADC_STATE	; Once again, wait for foreground to complete a
+   1810  ff1b		       26 fb		      BNE	LOOP_TST	;  twentieth of a second
+   1811  ff1d		       97 8b		      STAA	ADC_STATE	; Complete the handshake
+   1812  ff1f		       5a		      DECB		; Do this five times
+   1813  ff20		       26 f6		      BNE	LOOP_TST
+   1814  ff22
+   1815  ff22		       ce 00 0f 	      LDX	#15	; Use X as a combined counter and pointer while multiplying
+   1816  ff25							;  each of the values in the buffer by 4
+   1817  ff25		       ec 8a	   INIT_CONV_BUF LDD	CONV_BUF-3,X	; Get a value from the buffer
+   1818  ff27		       05		      LSLD		; Shift it left two bits
+   1819  ff28		       05		      LSLD
+   1820  ff29		       ed 8a		      STD	CONV_BUF-3,X	; The last two bits will all be zero, but their
+   1821  ff2b							;  significance is very small
+   1822  ff2b		       09		      DEX		; Back up to the previous location in the buffer
+   1823  ff2c		       09		      DEX
+   1824  ff2d		       09		      DEX
+   1825  ff2e		       26 f5		      BNE	INIT_CONV_BUF	; Repeat until all five filtered values have been
+   1826  ff30							;  initialized
+   1827  ff30							;; PAGE 49
+   1828  ff30
+   1829  ff30							; The final initialization task to be performed is setting the
+   1830  ff30							; contents of the various minimum, maximum, and mean values
+   1831  ff30		       bd fa 1d 	      JSR	INIT_MINMAX	; Initialize today's minimum, maximum, and mean
+   1832  ff33							;  values and set the mean value counter to 1
+   1833  ff33		       ce 00 12 	      LDX	#3*3*2	; Arbitrarly set yesterdays min and
+   1834  ff36							;  max to the same value
+   1835  ff36		       a6 9e	   INIT_LAST  LDAA	TODAY_MIN1-1,X
+   1836  ff38		       a7 b0		      STAA	LAST_MIN1-1,X
+   1837  ff3a		       09		      DEX
+   1838  ff3b		       26 f9		      BNE	INIT_LAST
+   1839  ff3d		       dc 9f		      LDD	TODAY_MIN1	; Also set yesterday's average to this value
+   1840  ff3f		       dd c3		      STD	LAST_MEAN1
+   1841  ff41		       dc a2		      LDD	TODAY_MIN2
+   1842  ff43		       dd c6		      STD	LAST_MEAN2
+   1843  ff45		       dc a5		      LDD	TODAY_MIN3
+   1844  ff47		       dd c9		      STD	LAST_MEAN3
+   1845  ff49
+   1846  ff49							; This completes the initialization process - all that remains is
+   1847  ff49							; to begin executing the normal background routines
+   1848  ff49		       7e fa 4e 	      JMP	DISPLAY_MODE	; Come up in normal display mode
+   1849  ff4c
+   1850  ff4c							; Freerun on NMI
+   1851  ff4c		       5e	   NMI_INT    DC.B	$5E	; execute instruction to cycle address counter
+   1852  ff4d							;  through memory for signature analysis
+   1853  ff4d		       20 fe		      BRA	*	; If that doesn't work than just die here
+   1854  ff4f
+   1855  ff4f							;; PAGE 50
+   1856  ff4f
+   1857  ff4f							; Vectors
+   1858  fff0					      ORG	$FFF0
+   1859  fff0		       f9 ce		      DC.W	IRQ_EXIT	; Serial port
+   1860  fff2		       f9 ce		      DC.W	IRQ_EXIT	; Timer overflow
+   1861  fff4		       f8 00		      DC.W	TIMER_INT	; Timer output compare
+   1862  fff6		       f9 ce		      DC.W	IRQ_EXIT	; Timer input capture
+   1863  fff8		       f9 ce		      DC.W	IRQ_EXIT	; External interrupt not used
+   1864  fffa		       f9 ce		      DC.W	IRQ_EXIT	; External interrupt not used
+   1865  fffc		       ff 4c		      DC.W	NMI_INT	; Non-maskable interrupt go to signature analysis
+   1866  fffe		       fe cd		      DC.W	RESTART	; Startup routine
