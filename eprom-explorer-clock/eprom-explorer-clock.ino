@@ -15,6 +15,7 @@
 #define EEPROM_OE_ PIN_A1
 
 extern const PROGMEM unsigned char exp_10_bin[];
+extern const PROGMEM unsigned char therm_bin[];
 
 
 /*
@@ -142,6 +143,9 @@ const PROGMEM unsigned char * get_rom_data(int rom, int &rom_len)
       case 1:
         rom_len = 2048;
         return exp_10_bin;
+      case 2:
+        rom_len = 2048;
+        return therm_bin;
       default:
           Serial.print("bad ROM index");
           return 0;
@@ -211,6 +215,10 @@ void loop() {
     Serial.println("p N - program rom N");
     Serial.println("c N - compare with rom N");
     Serial.println("r - read");
+    Serial.println("N: 0=test, 1=original, 2=therm");
+    Serial.println("");
+    Serial.println(" == REMEMBER to Erase before Program ==");
+    Serial.println("");
     Serial.print("> ");
     
     while (Serial.available() == 0)
