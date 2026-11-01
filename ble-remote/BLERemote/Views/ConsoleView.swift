@@ -61,7 +61,7 @@ struct ConsoleView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .noAutocapitalization()
                         .focused($focused)
                         .submitLabel(.send)
                         .onSubmit(send)
@@ -75,7 +75,7 @@ struct ConsoleView: View {
                 .background(.bar)
             }
             .navigationTitle("\(connection.device.name) Console")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Clear") { connection.clearLog() }

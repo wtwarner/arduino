@@ -15,10 +15,17 @@ struct DeviceDetailView: View {
             case .riverTable: RiverTableView(connection: connection)
             }
         }
+        // Grouped (inset, rounded) sections on every platform; macOS defaults to a flat
+        // columns style that ignores row backgrounds and has no side margins.
+        .formStyle(.grouped)
+        #if os(macOS)
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
+        #endif
         // Fresh control state when switching devices or changing a device's type.
         .id("\(connection.device.id)-\(connection.kind.rawValue)")
         .navigationTitle(connection.device.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbarTitleMenu {
             ForEach(store.devices) { d in
                 Button { selection = d.id } label: {

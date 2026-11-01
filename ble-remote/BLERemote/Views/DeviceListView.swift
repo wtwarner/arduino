@@ -137,7 +137,7 @@ struct EditDeviceView: View {
                 DeviceKindPicker(kind: $kind)
             }
             .navigationTitle("Edit Device")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

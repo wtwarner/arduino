@@ -73,6 +73,35 @@ The built app is at `build/Debug-iphonesimulator/BLERemote.app`; launch it with 
 Simulator tool. The simulator used was iPhone 18 Pro (3A13C9D9-F346-4C8E-A971-7A8EFF0D5254).
 Regenerate the icon with `swift tools/make_icon.swift BLERemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`.
 To run on the phone, the user opens the project in Xcode and presses ⌘R.
+The macOS icons (`AppIcon-mac-*.png`, plus the mac entries in `Contents.json`) are derived from the
+iOS icon by `swift tools/make_mac_icon.swift <AppIcon.png> <AppIcon.appiconset dir>` (inset rounded tile
+with shadow, since macOS doesn't mask icons). Re-run it after regenerating the iOS icon.
+
+### Targets (iPhone, iPad, Mac)
+One multiplatform target (`SDKROOT = auto`, iOS/iPadOS 17+, macOS 14+, no Catalyst). The Mac
+build uses the App Sandbox with the Bluetooth entitlement. iOS-only modifiers go through
+`inlineNavigationTitle()` / `noAutocapitalization()` in `Views/Components.swift`; use `#if os(iOS)`
+for any new iOS-only API.
+
+- **iPhone / iPad Simulator** (no signing needed; iPad is the same build, pick an iPad destination):
+  ```bash
+  xcodebuild -project BLERemote.xcodeproj -target BLERemote -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+  ```
+- **Real iPhone / iPad:** `tools/install_ios.sh [name|UDID]` builds a Release app, installs it
+  on a connected, paired device and launches it (`devicectl`). With no argument it uses the only
+  available physical device, otherwise it lists them and asks for a name or UDID substring
+  (e.g. `tools/install_ios.sh iPad`). The device must be unlocked and trusted. Alternatively,
+  open the project in Xcode, choose the device and press ⌘R.
+- **Mac, compile check only:**
+  ```bash
+  xcodebuild -project BLERemote.xcodeproj -target BLERemote -sdk macosx -configuration Debug CODE_SIGNING_ALLOWED=NO build
+  ```
+- **Mac, standalone app:** `tools/install_mac.sh` builds a signed Release app
+  (`build/Release/BLERemote.app`) and copies it to `/Applications` (or to a directory passed as
+  the first argument). Dev-signed, so it runs on this Mac only; other Macs need Developer ID
+  signing and notarization (Xcode: Product → Archive → Distribute App → Direct Distribution).
+  Bluetooth requires the signed build; the unsigned compile check above can't use it.
+- Mac build is verified to compile and sign; it has not been run against real hardware.
 
 ## Environment notes
 - In the last session, the Bash tool was blocked by a PreToolUse hook (`~/.claude/apple`

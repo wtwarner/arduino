@@ -148,3 +148,23 @@ struct StepButtons: View {
         }
     }
 }
+
+extension View {
+    /// Inline navigation title on iOS; a no-op on macOS, which has no such modifier.
+    func inlineNavigationTitle() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
+
+    /// Disables auto-capitalization on iOS; a no-op on macOS.
+    func noAutocapitalization() -> some View {
+        #if os(iOS)
+        textInputAutocapitalization(.never)
+        #else
+        self
+        #endif
+    }
+}

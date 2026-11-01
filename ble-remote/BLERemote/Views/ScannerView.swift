@@ -87,7 +87,7 @@ struct ScannerView: View {
                 }
             }
             .navigationTitle("Add Device")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -192,7 +192,7 @@ struct PairDeviceView: View {
             }
         }
         .navigationTitle("Pair Device")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Pair") {
